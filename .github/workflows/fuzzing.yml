@@ -1,0 +1,67 @@
+name: Fuzzing CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Nightly fuzzing at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang cmake make
+    
+    - name: Build project
+      run: |
+        mkdir build && cd build
+        cmake ..
+        make
+
+  fuzz-pr-libfuzzer:
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang make
+    
+    - name: Compile fuzzer
+      run: |
+        clang++ -fsanitize=fuzzer,address,undefined -O1 -g -std=c++17 \
+          fuzz/harness.cpp src/packet_parser.cpp -o fuzz_libfuzzer
+    
+    - name: Run libFuzzer (5 minutes)
+      run: |
+        mkdir -p corpus crashes
+        cp corpus/* corpus/ 2>/dev/null || true
+        timeout 300 ./fuzz_libfuzzer corpus/ -max_total_time=300 -artifact_prefix=crashes/ || FUZZ_EXIT_CODE=$?
+    
+    - name: Check for crashes
+      run: |
+        if ls crashes/crash-* 1> /dev/null 2>&1; then
+          echo "❌ НАЙДЕНЫ КРАШИ! PR заблокирован."
+          ls -lh crashes/
+          exit 1
+        else
+          echo "✅ Краши не найдены"
+        fi
+    
+    - name: Upload crash artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzzing-crashes
+        path: crashes/
+        retention-days: 30
