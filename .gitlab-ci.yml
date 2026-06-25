@@ -1,0 +1,48 @@
+stages:
+  - build
+  - fuzz-pr
+
+default:
+  tags:
+    - local-fuzzing
+
+variables:
+  CORPUS_DIR: "corpus"
+  CRASHES_DIR: "crashes"
+
+# Сборка
+build:
+  stage: build
+  before_script:
+    - echo "Сборка на локальном runner"
+  script:
+    - mkdir -p build && cd build
+    - cmake ..
+    - make
+  artifacts:
+    paths:
+      - build/
+    expire_in: 1 hour
+
+# libFuzzer в PR (5 минут)
+fuzz-pr-libfuzzer:
+  stage: fuzz-pr
+  script:
+    # Собираем fuzz_libfuzzer
+    - clang++ -fsanitize=fuzzer,address,undefined -O1 -g -std=c++17 fuzz/harness.cpp src/packet_parser.cpp -o fuzz_libfuzzer
+    - mkdir -p crashes
+    # Запускаем фаззинг на 5 минут
+    - ./fuzz_libfuzzer corpus/ -max_total_time=300 -artifact_prefix=crashes/ || FUZZ_EXIT=$?
+    # Проверяем, есть ли краши
+    - |
+      if ls crashes/crash-* 1> /dev/null 2>&1; then
+        echo "❌ НАЙДЕНЫ КРАШИ! Pipeline заблокирован."
+        ls -lh crashes/
+        exit 1
+      fi
+      echo "✅ Краши не найдены"
+  artifacts:
+    paths:
+      - crashes/
+    when: on_failure
+    expire_in: 1 week
