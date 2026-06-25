@@ -1,0 +1,29 @@
+# Артефакты сборки
+build/
+*.o
+*.a
+*.so
+
+# Бинарники фаззеров
+fuzz_libfuzzer
+fuzz_afl
+packet_app
+
+# Результаты фаззинга (корпус растёт бесконечно)
+corpus/
+crashes/
+afl_findings/
+
+# Временные файлы
+*.tmp
+*.log
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
