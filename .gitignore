@@ -1,29 +1,40 @@
-# Артефакты сборки
-build/
+# Node modules (НИКОГДА не коммитим!)
+node_modules/
+src/js/node_modules/
+**/node_modules/
+
+# Бинарники
 *.o
-*.a
-*.so
+*.exe
+vuln_demo
+vuln_demo_fixed
+fuzzer
+hfuzzer
+xml_fuzzer
 
-# Бинарники фаззеров
-fuzz_libfuzzer
-fuzz_afl
-packet_app
+# Crash files (слишком большие)
+crashes/crash-*
+hfuzz_crashes/
+**/crashes/crash-*
 
-# Результаты фаззинга (корпус растёт бесконечно)
-corpus/
-crashes/
-afl_findings/
+# Python
+__pycache__/
+*.pyc
+.env
 
-# Временные файлы
-*.tmp
-*.log
-*~
+# OS файлы
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
-*.swp
 
-# OS
-.DS_Store
-Thumbs.db
+# DefectDojo данные
+defectdojo/
+
+# MinIO данные
+minio-data/
+
+# HonggFuzz
+honggfuzz/
