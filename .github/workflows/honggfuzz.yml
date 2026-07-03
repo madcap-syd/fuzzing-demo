@@ -1,0 +1,109 @@
+name: HonggFuzz Security Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Nightly fuzzing at 2 AM
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds'
+        required: false
+        default: '3600'
+
+jobs:
+  honggfuzz:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          clang \
+          llvm \
+          binutils-dev \
+          libunwind-dev \
+          libblocksruntime-dev \
+          libdisasm-dev \
+          libtool-bin
+    
+    - name: Build HonggFuzz
+      run: |
+        git clone https://github.com/google/honggfuzz.git
+        cd honggfuzz
+        make
+        sudo make install
+        cd ..
+    
+    - name: Build target with HonggFuzz
+      run: |
+        cd fuzz-cpp
+        clang++ -fsanitize=address,undefined -O1 -g -std=c++17 \
+          src/packet_parser.cpp src/hfuzz_harness.cpp \
+          -I$HOME/honggfuzz \
+          -L$HOME/honggfuzz/libhfuzz \
+          -lhfuzz \
+          -lpthread \
+          -o hfuzzer
+        
+        mkdir -p corpus crashes
+        cp corpus/* corpus/ 2>/dev/null || true
+    
+    - name: Run HonggFuzz
+      run: |
+        cd fuzz-cpp
+        DURATION=${{ github.event.inputs.duration || 3600 }}
+        
+        honggfuzz --persistent \
+          --input corpus \
+          --output crashes \
+          --threads 4 \
+          --timeout 10 \
+          --run_time $DURATION \
+          -- ./hfuzzer 2>&1 | tee honggfuzz.log || true
+    
+    - name: Parse crashes
+      if: always()
+      run: |
+        python3 scripts/parse_honggfuzz_crashes.py \
+          --crashes-dir fuzz-cpp/crashes \
+          --output fuzz_results.json
+    
+    - name: Upload to DefectDojo
+      if: always()
+      env:
+        DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+      run: |
+        python3 scripts/upload_to_defectdojo.py \
+          --results fuzz_results.json \
+          --product "Packet Parser" \
+          --engagement "HonggFuzz CI/CD"
+    
+    - name: Upload artifacts
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          const artifacts = [
+            'fuzz-cpp/honggfuzz.log',
+            'fuzz_results.json',
+            'fuzz-cpp/crashes/*'
+          ];
+          
+          for (const artifact of artifacts) {
+            if (fs.existsSync(artifact)) {
+              console.log(`Found artifact: ${artifact}`);
+            }
+          }

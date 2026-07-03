@@ -24,7 +24,7 @@ def run_zap_scan(target_url, output_dir):
     cmd = [
         'docker', 'run', '--rm', '-u', 'zap',
         '-v', f"{output_dir}:/zap/wrk/:rw",
-        '-t', 'owasp/zap2docker-stable',
+        '-t', 'ghcr.io/zaproxy/zaproxy:stable',
         'zap-baseline.py',
         '-t', target_url,
         '-r', 'zap_report.html',
