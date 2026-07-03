@@ -1,0 +1,57 @@
+[
+  {
+    "id": "DD-0001",
+    "title": "[Fuzzing] heap-buffer-overflow (150 crashes)",
+    "severity": "Critical",
+    "cvssv3_score": 9.8,
+    "cwe": 122,
+    "unique_id_from_tool": "52d07dae81590e88",
+    "verified": false,
+    "active": true,
+    "duplicate": false
+  },
+  {
+    "id": "DD-0002",
+    "title": "[Fuzzing] use-after-free (80 crashes)",
+    "severity": "Critical",
+    "cvssv3_score": 9.8,
+    "cwe": 416,
+    "unique_id_from_tool": "d61b29b4b9fc2cda",
+    "verified": false,
+    "active": true,
+    "duplicate": false
+  },
+  {
+    "id": "DD-0003",
+    "title": "[Fuzzing] stack-buffer-overflow (45 crashes)",
+    "severity": "Critical",
+    "cvssv3_score": 9.8,
+    "cwe": 121,
+    "unique_id_from_tool": "52aaad21dc1488e8",
+    "verified": false,
+    "active": true,
+    "duplicate": false
+  },
+  {
+    "id": "DD-0004",
+    "title": "[Fuzzing] prototype-pollution (180 crashes)",
+    "severity": "Critical",
+    "cvssv3_score": 9.1,
+    "cwe": 1321,
+    "unique_id_from_tool": "e3b0c44298fc1c14",
+    "verified": false,
+    "active": true,
+    "duplicate": false
+  },
+  {
+    "id": "DD-0005",
+    "title": "[Fuzzing] null-dereference (200 crashes)",
+    "severity": "Medium",
+    "cvssv3_score": 5.0,
+    "cwe": 476,
+    "unique_id_from_tool": "a485bde6f561f358",
+    "verified": false,
+    "active": true,
+    "duplicate": false
+  }
+]

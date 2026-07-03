@@ -1,0 +1,79 @@
+rules:
+  # Prototype Pollution
+  - id: javascript.security.prototype-pollution
+    patterns:
+      - pattern: |
+          global[$KEY] = $VALUE
+      - pattern-not: |
+          global["safe_key"] = $VALUE
+    message: "Potential Prototype Pollution: dynamic property assignment on global object"
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: CWE-1321
+      category: security
+      technology:
+        - javascript
+      references:
+        - https://owasp.org/www-community/attacks/Prototype_Pollution
+
+  # Eval usage
+  - id: javascript.security.dangerous-eval
+    pattern: eval(...)
+    message: "Use of eval() is dangerous and can lead to code injection"
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: CWE-95
+      category: security
+
+  # Unsafe regex (ReDoS)
+  - id: javascript.security.redos-vulnerable
+    patterns:
+      - pattern: |
+          new RegExp($X)
+      - pattern-not: |
+          new RegExp("...")
+    message: "Potentially vulnerable regex pattern (ReDoS risk)"
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      cwe: CWE-1333
+      category: security
+
+  # Hardcoded secrets
+  - id: javascript.security.hardcoded-password
+    patterns:
+      - pattern: |
+          const $PASSWORD = "..."
+      - pattern-regex: "password|passwd|pwd|secret|api_key|apikey"
+    message: "Hardcoded secret detected"
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: CWE-798
+      category: security
+
+  # Unsafe JSON.parse
+  - id: javascript.security.unsafe-json-parse
+    pattern: JSON.parse(...)
+    message: "JSON.parse without validation can lead to Prototype Pollution"
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      cwe: CWE-1321
+      category: security
+
+  # Dynamic property access
+  - id: javascript.security.dynamic-property-access
+    pattern: |
+      for (const $KEY in $OBJ) {
+        ...
+        $OBJ[$KEY] = ...
+      }
+    message: "Dynamic property iteration without key validation"
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      cwe: CWE-1321
+      category: security

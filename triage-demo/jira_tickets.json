@@ -1,0 +1,82 @@
+[
+  {
+    "key": "SEC-0001",
+    "summary": "[FUZZ] heap-buffer-overflow \u2014 150 crashes",
+    "priority": "Highest",
+    "cvss": 9.8,
+    "cwe": 122,
+    "type": "heap-buffer-overflow",
+    "signature": "52d07dae81590e88",
+    "status": "Open",
+    "labels": [
+      "fuzzing",
+      "auto-triage",
+      "heap-buffer-overflow"
+    ],
+    "created": "2026-07-02T12:38:57.551640"
+  },
+  {
+    "key": "SEC-0002",
+    "summary": "[FUZZ] use-after-free \u2014 80 crashes",
+    "priority": "Highest",
+    "cvss": 9.8,
+    "cwe": 416,
+    "type": "use-after-free",
+    "signature": "d61b29b4b9fc2cda",
+    "status": "Open",
+    "labels": [
+      "fuzzing",
+      "auto-triage",
+      "use-after-free"
+    ],
+    "created": "2026-07-02T12:38:57.551695"
+  },
+  {
+    "key": "SEC-0003",
+    "summary": "[FUZZ] stack-buffer-overflow \u2014 45 crashes",
+    "priority": "Highest",
+    "cvss": 9.8,
+    "cwe": 121,
+    "type": "stack-buffer-overflow",
+    "signature": "52aaad21dc1488e8",
+    "status": "Open",
+    "labels": [
+      "fuzzing",
+      "auto-triage",
+      "stack-buffer-overflow"
+    ],
+    "created": "2026-07-02T12:38:57.551715"
+  },
+  {
+    "key": "SEC-0004",
+    "summary": "[FUZZ] prototype-pollution \u2014 180 crashes",
+    "priority": "Highest",
+    "cvss": 9.1,
+    "cwe": 1321,
+    "type": "prototype-pollution",
+    "signature": "e3b0c44298fc1c14",
+    "status": "Open",
+    "labels": [
+      "fuzzing",
+      "auto-triage",
+      "prototype-pollution"
+    ],
+    "created": "2026-07-02T12:38:57.551727"
+  },
+  {
+    "key": "SEC-0005",
+    "summary": "[FUZZ] null-dereference \u2014 200 crashes",
+    "priority": "Medium",
+    "cvss": 5.0,
+    "cwe": 476,
+    "type": "null-dereference",
+    "signature": "a485bde6f561f358",
+    "status": "Open",
+    "labels": [
+      "fuzzing",
+      "auto-triage",
+      "null-dereference"
+    ],
+    "created": "2026-07-02T12:38:57.551742"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "key": "SEC-0001",
+  "summary": "[FUZZ] heap-buffer-overflow in parsePacket \u2014 CVSS 9.8",
+  "description": "\nh2. Fuzzing Bug Report \u2014 REAL CRASH\n\n*Type:* heap-buffer-overflow\n*CVSS:* 9.8\n*CWE:* CWE-122\n*Location:* packet_parser.cpp:21\n*Function:* parsePacket\n\nh3. Stack Trace\n{code}\n==7218==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x75169c9e02bc at pc 0x59c83d7baf7f bp 0x7ffe5f40cc70 sp 0x7ffe5f40c430\nREAD of size 65535 at 0x75169c9e02bc thread T0\n    #0 0x59c83d7baf7e in __asan_memcpy (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x10bf7e)\n    #1 0x59c83d802b63 in parsePacket(unsigned char const*, unsigned long, Packet&) /home/madcap/fuzzing-demo/fuzz-cpp/src/packet_parser.cpp:21:5\n    #2 0x59c83d802e57 in LLVMFuzzerTestOneInput /home/madcap/fuzzing-demo/fuzz-\n{code}\n\nh3. Reproduction\n{code}\n./fuzzer triage-real/crashes/cpp/crash-real.bin\n{code}\n\nh3. Impact\nHeap buffer overflow in packet parser allows reading uninitialized memory.\nPotential for information disclosure or crash (DoS).\n\nh3. Metadata\n* Found: 2026-07-02 12:42\n* Fuzzer: libFuzzer + AddressSanitizer\n* PoC: triage-real/crashes/cpp/crash-real.bin\n        ",
+  "priority": "Highest",
+  "status": "Open",
+  "labels": [
+    "fuzzing",
+    "real-crash",
+    "heap-buffer-overflow",
+    "cwe-122"
+  ],
+  "created": "2026-07-02T12:42:51.447744"
+}

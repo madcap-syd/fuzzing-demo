@@ -1,0 +1,13 @@
+{
+  "signature": "51a0815d6ae93f05",
+  "analysis": {
+    "type": "heap-buffer-overflow",
+    "cwe": 122,
+    "cvss": 9.8,
+    "is_fp": false,
+    "fp_reason": "",
+    "root_cause": "packet_parser.cpp:23 in parsePacket",
+    "fix": "Add bounds checking before memcpy - validate packet.length <= 256",
+    "severity": "Critical"
+  }
+}

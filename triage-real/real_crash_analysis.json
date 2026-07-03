@@ -1,0 +1,10 @@
+{
+  "signature": "00e7ec149e633ca4",
+  "crash_type": "heap-buffer-overflow",
+  "cvss": 9.8,
+  "cwe": 122,
+  "stack_trace": "==7218==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x75169c9e02bc at pc 0x59c83d7baf7f bp 0x7ffe5f40cc70 sp 0x7ffe5f40c430\nREAD of size 65535 at 0x75169c9e02bc thread T0\n    #0 0x59c83d7baf7e in __asan_memcpy (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x10bf7e)\n    #1 0x59c83d802b63 in parsePacket(unsigned char const*, unsigned long, Packet&) /home/madcap/fuzzing-demo/fuzz-cpp/src/packet_parser.cpp:21:5\n    #2 0x59c83d802e57 in LLVMFuzzerTestOneInput /home/madcap/fuzzing-demo/fuzz-cpp/src/packet_parser.cpp:46:9\n    #3 0x59c83d6fe80f in fuzzer::Fuzzer::ExecuteCallback\n    #4 0x59c83d6fde39 in fuzzer::Fuzzer::RunOne\n    #5 0x59c83d6ffc52 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora\n    #6 0x59c83d70016b in fuzzer::Fuzzer::Loop\n    #7 0x59c83d6ed140 in fuzzer::FuzzerDriver\n    #8 0x59c83d717e46 in main\nSUMMARY: AddressSanitizer: heap-buffer-overflow (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x10bf7e) in __asan_memcpy\n",
+  "poc_file": "triage-real/crashes/cpp/crash-real.bin",
+  "location": "packet_parser.cpp:21",
+  "function": "parsePacket"
+}

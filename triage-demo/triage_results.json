@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-06-29T16:00:00Z",
+  "total_crashes": 1000,
+  "unique_bugs": 7,
+  "real_bugs": 5,
+  "false_positives": 2,
+  "dedup_ratio": 142.9,
+  "fp_rate": 28.6,
+  "bugs": [
+    {
+      "signature": "52d07dae81590e88",
+      "crash_count": 150,
+      "type": "heap-buffer-overflow",
+      "is_fp": false,
+      "cvss": 9.8,
+      "cwe": 122,
+      "sample_file": "triage-demo/crashes/cpp/crash-0000.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0000.bin"
+    },
+    {
+      "signature": "d61b29b4b9fc2cda",
+      "crash_count": 80,
+      "type": "use-after-free",
+      "is_fp": false,
+      "cvss": 9.8,
+      "cwe": 416,
+      "sample_file": "triage-demo/crashes/cpp/crash-0150.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0150.bin"
+    },
+    {
+      "signature": "52aaad21dc1488e8",
+      "crash_count": 45,
+      "type": "stack-buffer-overflow",
+      "is_fp": false,
+      "cvss": 9.8,
+      "cwe": 121,
+      "sample_file": "triage-demo/crashes/cpp/crash-0230.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0230.bin"
+    },
+    {
+      "signature": "e3b0c44298fc1c14",
+      "crash_count": 180,
+      "type": "prototype-pollution",
+      "is_fp": false,
+      "cvss": 9.1,
+      "cwe": 1321,
+      "sample_file": "triage-demo/crashes/cpp/crash-0475.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0475.bin"
+    },
+    {
+      "signature": "a485bde6f561f358",
+      "crash_count": 200,
+      "type": "null-dereference",
+      "is_fp": false,
+      "cvss": 5.0,
+      "cwe": 476,
+      "sample_file": "triage-demo/crashes/cpp/crash-0275.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0275.bin"
+    },
+    {
+      "signature": "abd52b2c328c771f",
+      "crash_count": 165,
+      "type": "assertion-failure",
+      "is_fp": true,
+      "cvss": 3.0,
+      "cwe": 617,
+      "sample_file": "triage-demo/crashes/cpp/crash-0835.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0835.bin"
+    },
+    {
+      "signature": "78e143d30bac83ee",
+      "crash_count": 180,
+      "type": "oom",
+      "is_fp": true,
+      "cvss": 0.0,
+      "cwe": 0,
+      "sample_file": "triage-demo/crashes/cpp/crash-0655.txt",
+      "poc_file": "triage-demo/crashes/cpp/crash-0655.bin"
+    }
+  ]
+}

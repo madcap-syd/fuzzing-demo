@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.71.2"
+  },
+  "ReportID": "019f0efc-fa0a-7c2f-a5c8-0c1dd8b4fbb1",
+  "CreatedAt": "2026-06-28T19:08:07.946801696+03:00",
+  "ArtifactID": "sha256:b08111c43b03fb6c9a42c8960c8cdd4670a9aa8c299bb816a5a51517c3449e9b",
+  "ArtifactName": "/home/madcap/fuzzing-demo",
+  "ArtifactType": "repository",
+  "Metadata": {
+    "RepoURL": "git@github.com:madcap-syd/fuzzing-demo.git",
+    "Branch": "main",
+    "Commit": "754d80b702b89afe1d9aac2b9510158607a4e28e",
+    "CommitMsg": "Add comprehensive security scanning tools\n\n- Bandit: Python SAST scanner\n- Trivy: Container and filesystem vulnerability scanner\n- OWASP ZAP: Web application security scanner\n- Unified reporting with ФСТЕК compliance\n- Integration with Vulnerability Dashboard",
+    "Author": "Madcap Fuzzer \u003cmadcap@fuzzing-lab.local\u003e",
+    "Committer": "Madcap Fuzzer \u003cmadcap@fuzzing-lab.local\u003e"
+  }
+}

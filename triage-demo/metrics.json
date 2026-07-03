@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-07-02T12:38:57.604771",
+  "total_crashes": 1000,
+  "unique_bugs": 7,
+  "real_bugs": 5,
+  "false_positives": 2,
+  "dedup_ratio": 142.9,
+  "fp_rate": 28.6,
+  "manual_time_hours": 333.3,
+  "auto_time_hours": 0.2,
+  "saved_hours": 333.1,
+  "efficiency_gain": 1428.6
+}
