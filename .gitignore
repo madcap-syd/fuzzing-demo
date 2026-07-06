@@ -1,40 +1,39 @@
-# Node modules (НИКОГДА не коммитим!)
+# Node modules
 node_modules/
 src/js/node_modules/
-**/node_modules/
 
-# Бинарники
+# Build artifacts
 *.o
-*.exe
+*.a
+*.so
 vuln_demo
 vuln_demo_fixed
 fuzzer
 hfuzzer
-xml_fuzzer
 
-# Crash files (слишком большие)
-crashes/crash-*
+# Crash files
+crashes/
 hfuzz_crashes/
-**/crashes/crash-*
+corpus/
 
 # Python
 __pycache__/
 *.pyc
 .env
 
-# OS файлы
-.DS_Store
-Thumbs.db
-
 # IDE
 .vscode/
 .idea/
 
-# DefectDojo данные
+# OS
+.DS_Store
+Thumbs.db
+
+# DefectDojo
 defectdojo/
 
-# MinIO данные
+# MinIO
 minio-data/
 
-# HonggFuzz
+# HonggFuzz build
 honggfuzz/
