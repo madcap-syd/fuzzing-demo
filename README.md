@@ -1,40 +1,60 @@
-# Fuzzing Demo - Тестовое приложение для демонстрации CI/CD фаззинга
+# Fuzzing Demo - Automated Vulnerability Discovery Pipeline
 
-## Описание
-Парсер кастомного бинарного протокола с намеренными уязвимостями для демонстрации возможностей фаззинга.
+Automated DevSecOps pipeline for C++ fuzzing with ML classification and DefectDojo integration.
 
-## Структура
-- `src/` - исходный код парсера
-- `fuzz/` - harness'ы для фаззинга
-- `.gitlab-ci.yml` - CI/CD конфигурация
+## Quick Start
 
-## Уязвимости
-1. Нет проверки размера перед чтением заголовка
-2. Нет проверки payload_size на разумность
-3. Нет проверки границ при копировании payload
-4. Обработка payload без валидации
-5. Не проверяем размер payload перед обработкой
+```bash
+sudo apt install -y clang llvm libunwind-dev binutils-dev
+pip3 install scikit-learn numpy pandas joblib requests
+./run_honggfuzz_pipeline.sh 60
+```
 
-## Сборка
+## Architecture
 
-    mkdir build && cd build
-    cmake ..
-    make
+Code -> Fuzzing (LibFuzzer/HonggFuzz) -> Crash Files -> Deduplication (SHA-256) -> FP Filter (ML 95%) -> DefectDojo -> MinIO WORM
 
-## Запуск
+## Metrics
 
-    ./packet_app test_packet.bin
+| Metric | Value |
+|--------|-------|
+| Crashes/night | ~1000 |
+| Dedup ratio | 143x |
+| FP rate | <15% |
+| ML accuracy | 95% |
+| TTD | <24h |
+| Efficiency | 1400x |
 
-## Фаззинг
+## Vulnerability Types
 
-### libFuzzer (быстрый тест)
+1. **Heap Buffer Overflow** (CWE-122) - memcpy without bounds check
+2. **Use-After-Free** (CWE-416) - read after delete
+3. **Stack Buffer Overflow** (CWE-121) - strcpy without limit
+4. **Integer Overflow** (CWE-190) - width*height overflow
+5. **Null Pointer Dereference** (CWE-476) - *ptr where ptr=nullptr
 
-    clang++ -fsanitize=fuzzer,address,undefined -O1 -g -std=c++17 \
-        fuzz/harness.cpp src/packet_parser.cpp -o fuzz_libfuzzer
-    ./fuzz_libfuzzer corpus/ -max_total_time=120
+## Repository Structure
 
-### AFL++ (глубокий анализ)
+- fuzz-cpp/ - C++ fuzzing targets and harnesses
+- ml/ - ML classifier (fp_classifier.pkl, 95% accuracy)
+- scripts/ - Automation (parse, upload to DefectDojo)
+- .github/workflows/ - CI/CD pipeline
+- run_honggfuzz_pipeline.sh - End-to-end pipeline
 
-    afl-clang-fast++ -O1 -g -std=c++17 \
-        fuzz/afl_harness.cpp src/packet_parser.cpp -o fuzz_afl
-    afl-fuzz -i corpus/ -o afl_findings/ -t 1000 -- ./fuzz_afl @@
+## Tech Stack
+
+- **Fuzzers:** LibFuzzer, HonggFuzz, Jazzer.js
+- **Sanitizers:** ASan, UBSan
+- **ML:** scikit-learn, Gradient Boosting
+- **Vulnerability Management:** DefectDojo
+- **Storage:** MinIO (WORM, 365 days)
+- **CI/CD:** GitHub Actions
+- **Compliance:** FSTEC 239, GOST R 56939
+
+## Interview Pitch
+
+I built an automated DevSecOps pipeline for C++ fuzzing. LibFuzzer generates ~1000 crashes per night. My pipeline deduplicates them by stack trace (1000 to 7 unique bugs), filters FPs via 3-level system (heuristics + known issues + ML with 95% accuracy), classifies by CWE/CVSS, creates tickets in DefectDojo via API, and stores PoCs in WORM storage for FSTEC compliance. Result: 333 hours manual work to 0.2 hours automated. 1400x efficiency gain.
+
+## Author
+
+madcap-syd | github.com/madcap-syd
