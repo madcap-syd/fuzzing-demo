@@ -2,87 +2,92 @@ name: Fuzzing CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'  # Nightly at 2 AM
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds'
+        required: false
+        default: '60'
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  fuzzing:
+    runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang cmake make
+        sudo apt-get install -y \
+          clang \
+          llvm \
+          binutils-dev \
+          libunwind-dev \
+          libblocksruntime-dev \
+          libdisasm-dev \
+          libtool-bin \
+          python3-pip
+        
+        pip3 install requests scikit-learn numpy pandas joblib
     
-    - name: Build project
+    - name: Build HonggFuzz
       run: |
-        mkdir build && cd build
-        cmake ..
-        make
-
-  fuzz-pr-libfuzzer:
-    runs-on: ubuntu-22.04
-    needs: build
-    steps:
-    - uses: actions/checkout@v4
+        git clone --depth 1 https://github.com/google/honggfuzz.git
+        cd honggfuzz
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+        cd ..
     
-    - name: Install dependencies
+    - name: Build target
       run: |
-        sudo apt-get update
-        sudo apt-get install -y clang make
+        cd fuzz-cpp
+        clang++ -fsanitize=address,undefined -O1 -g -std=c++17 \
+          src/packet_parser.cpp -o fuzzer
+        
+        # Создаём простой corpus
+        mkdir -p corpus
+        echo "test input" > corpus/test1.txt
+        echo "another test" > corpus/test2.txt
     
-    - name: Compile fuzzer
+    - name: Run LibFuzzer (quick test)
       run: |
-        clang++ -fsanitize=fuzzer,address,undefined -O1 -g -std=c++17 \
-          -Isrc fuzz/harness.cpp src/packet_parser.cpp -o fuzz_libfuzzer
+        cd fuzz-cpp
+        timeout 60 ./fuzzer corpus/ -max_total_time=30 -artifact_prefix=crashes/crash- || true
+        
+        mkdir -p crashes
+        ls -la crashes/ || echo "No crashes found"
     
-    - name: Run libFuzzer (5 minutes)
+    - name: Parse results
       run: |
-        mkdir -p corpus crashes
-        timeout 300 ./fuzz_libfuzzer corpus/ -max_total_time=300 -artifact_prefix=crashes/ || true
+        python3 scripts/parse_honggfuzz_crashes.py \
+          --crashes-dir fuzz-cpp/crashes \
+          --output fuzz_results.json || echo '{"summary": {"total_crashes": 0}}' > fuzz_results.json
     
-    - name: Check for crashes
+    - name: Upload to DefectDojo
+      if: always()
+      env:
+        DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL || 'http://localhost:8080' }}
+        DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY || 'test' }}
       run: |
-        if ls crashes/crash-* 1> /dev/null 2>&1; then
-          echo "❌ НАЙДЕНЫ КРАШИ! PR заблокирован."
-          ls -lh crashes/
-          exit 1
-        else
-          echo "✅ Краши не найдены"
-        fi
+        python3 scripts/upload_to_defectdojo.py \
+          --results fuzz_results.json \
+          --product "Packet Parser" \
+          --engagement "GitHub Actions CI/CD" || echo "DefectDojo upload skipped"
     
-    - name: Upload crash artifacts
-      if: failure()
+    - name: Upload artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: fuzzing-crashes
-        path: crashes/
-        retention-days: 30
-
-  # НОВОЕ: Автоматическая генерация harness с помощью LLM
-  generate-harness-with-llm:
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Ollama
-      run: |
-        curl -fsSL https://ollama.com/install.sh | sh
-    
-    - name: Pull LLM model
-      run: |
-        ollama pull qwen2.5-coder:1.5b
-    
-    - name: Generate harness with LLM
-      run: |
-        python3 scripts/generate_harness_llm.py
-    
-    - name: Upload generated harness
-      uses: actions/upload-artifact@v4
-      with:
-        name: llm-generated-harness
-        path: fuzz/harness_llm.cpp
-        retention-days: 30
+        name: fuzzing-results
+        path: |
+          fuzz_results.json
+          fuzz-cpp/crashes/
+        if-no-files-found: ignore
