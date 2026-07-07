@@ -1,0 +1,74 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 67478688
+INFO: Loaded 1 modules   (16 inline 8-bit counters): 16 [0x5b1be1f38ef0, 0x5b1be1f38f00), 
+INFO: Loaded 1 PC tables (16 PCs): 16 [0x5b1be1f38f00,0x5b1be1f39000), 
+INFO:        2 files found in corpus/
+INFO: -max_len is not provided; libFuzzer will not generate inputs larger than 4096 bytes
+INFO: seed corpus: files: 2 min: 24b max: 108b total: 132b rss: 31Mb
+=================================================================
+==7886==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x72cfbd9e02bc at pc 0x5b1be1ea8f7f bp 0x7fffe358bd30 sp 0x7fffe358b4f0
+READ of size 65535 at 0x72cfbd9e02bc thread T0
+    #0 0x5b1be1ea8f7e in __asan_memcpy (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x10bf7e) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #1 0x5b1be1ef0b63 in parsePacket(unsigned char const*, unsigned long, Packet&) /home/madcap/fuzzing-demo/day1-practice/src/packet_parser.cpp:23:5
+    #2 0x5b1be1ef0e57 in LLVMFuzzerTestOneInput /home/madcap/fuzzing-demo/day1-practice/src/packet_parser.cpp:48:9
+    #3 0x5b1be1dec80f in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x4f80f) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #4 0x5b1be1debe39 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x4ee39) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #5 0x5b1be1dedc52 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x50c52) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #6 0x5b1be1dee16b in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x5116b) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #7 0x5b1be1ddb140 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x3e140) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #8 0x5b1be1e05e46 in main (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x68e46) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #9 0x761fbe62a600 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #10 0x761fbe62a717 in __libc_start_main csu/../csu/libc-start.c:360:3
+    #11 0x5b1be1dcf944 in _start (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x32944) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+
+0x72cfbd9e02bc is located 0 bytes after 108-byte region [0x72cfbd9e0250,0x72cfbd9e02bc)
+allocated by thread T0 here:
+    #0 0x5b1be1eef651 in operator new[](unsigned long) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x152651) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #1 0x5b1be1dec715 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x4f715) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #2 0x5b1be1debe39 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x4ee39) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #3 0x5b1be1dedc52 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x50c52) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #4 0x5b1be1dee16b in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x5116b) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #5 0x5b1be1ddb140 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x3e140) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #6 0x5b1be1e05e46 in main (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x68e46) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+    #7 0x761fbe62a600 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #8 0x761fbe62a717 in __libc_start_main csu/../csu/libc-start.c:360:3
+    #9 0x5b1be1dcf944 in _start (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x32944) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow (/home/madcap/fuzzing-demo/day1-practice/fuzzer+0x10bf7e) (BuildId: 785fc31193f68a4d839e50d227cb0b05ef1913fb) in __asan_memcpy
+Shadow bytes around the buggy address:
+  0x72cfbd9e0000: fa fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+  0x72cfbd9e0080: 00 00 00 00 00 fa fa fa fa fa fa fa fa fa 00 00
+  0x72cfbd9e0100: 00 00 00 00 00 00 00 00 00 00 00 fa fa fa fa fa
+  0x72cfbd9e0180: fa fa fa fa 00 00 00 00 00 00 00 00 00 00 00 00
+  0x72cfbd9e0200: 00 04 fa fa fa fa fa fa fa fa 00 00 00 00 00 00
+=>0x72cfbd9e0280: 00 00 00 00 00 00 00[04]fa fa fa fa fa fa fa fa
+  0x72cfbd9e0300: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x72cfbd9e0380: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x72cfbd9e0400: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x72cfbd9e0480: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x72cfbd9e0500: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==7886==ABORTING
+MS: 0 ; base unit: 0000000000000000000000000000000000000000
+0xef,0xbe,0xad,0xde,0x1,0x0,0xff,0xff,0xc,0xcf,0xbd,0xc7,0x3a,0x87,0xf4,0xc1,0x32,0xe4,0xa,0x13,0x17,0x73,0x66,0x4f,0xe8,0xb8,0x12,0xb6,0xcd,0x29,0x5b,0xb5,0x5d,0xaf,0xd0,0xc5,0x4,0x3b,0x55,0x4b,0xdf,0x88,0x13,0x7,0x58,0xe6,0x75,0x49,0x49,0x45,0xb5,0xfd,0x8d,0xf6,0xef,0x77,0xc2,0xb9,0x1a,0xc8,0xbd,0xb4,0x6f,0x9a,0xfe,0x8a,0x24,0x9a,0xb0,0xa0,0x22,0x3d,0x6b,0x20,0x69,0x8e,0x9b,0x5f,0x48,0xd1,0x80,0x1a,0xcc,0xbe,0x64,0x3b,0xb6,0x99,0x24,0x60,0x51,0xd,0x8d,0xcc,0x4e,0x8f,0xd9,0x56,0x5e,0x7a,0x56,0xf2,0xc9,0xf,0xeb,0x32,0x80,0xd4,
+\357\276\255\336\001\000\377\377\014\317\275\307:\207\364\3012\344\012\023\027sfO\350\270\022\266\315)[\265]\257\320\305\004;UK\337\210\023\007X\346uIIE\265\375\215\366\357w\302\271\032\310\275\264o\232\376\212$\232\260\240\"=k i\216\233_H\321\200\032\314\276d;\266\231$`Q\015\215\314N\217\331V^zV\362\311\017\3532\200\324
+artifact_prefix='crashes/crash-'; Test unit written to crashes/crash-crash-15ec77273f0facd9aa935da890d8680f3db93a77
+Base64: 776t3gEA//8Mz73HOof0wTLkChMXc2ZP6LgSts0pW7Vdr9DFBDtVS9+IEwdY5nVJSUW1/Y3273fCuRrIvbRvmv6KJJqwoCI9ayBpjptfSNGAGsy+ZDu2mSRgUQ2NzE6P2VZeelbyyQ/rMoDU

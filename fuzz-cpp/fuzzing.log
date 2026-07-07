@@ -1,0 +1,74 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 877442429
+INFO: Loaded 1 modules   (16 inline 8-bit counters): 16 [0x59c83d84aef0, 0x59c83d84af00), 
+INFO: Loaded 1 PC tables (16 PCs): 16 [0x59c83d84af00,0x59c83d84b000), 
+INFO:        3 files found in corpus/
+INFO: -max_len is not provided; libFuzzer will not generate inputs larger than 4096 bytes
+INFO: seed corpus: files: 3 min: 12b max: 108b total: 144b rss: 32Mb
+=================================================================
+==7218==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x75169c9e02bc at pc 0x59c83d7baf7f bp 0x7ffe5f40cc70 sp 0x7ffe5f40c430
+READ of size 65535 at 0x75169c9e02bc thread T0
+    #0 0x59c83d7baf7e in __asan_memcpy (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x10bf7e) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #1 0x59c83d802b63 in parsePacket(unsigned char const*, unsigned long, Packet&) /home/madcap/fuzzing-demo/fuzz-cpp/src/packet_parser.cpp:21:5
+    #2 0x59c83d802e57 in LLVMFuzzerTestOneInput /home/madcap/fuzzing-demo/fuzz-cpp/src/packet_parser.cpp:46:9
+    #3 0x59c83d6fe80f in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x4f80f) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #4 0x59c83d6fde39 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x4ee39) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #5 0x59c83d6ffc52 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x50c52) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #6 0x59c83d70016b in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x5116b) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #7 0x59c83d6ed140 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x3e140) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #8 0x59c83d717e46 in main (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x68e46) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #9 0x78669d62a600 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #10 0x78669d62a717 in __libc_start_main csu/../csu/libc-start.c:360:3
+    #11 0x59c83d6e1944 in _start (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x32944) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+
+0x75169c9e02bc is located 0 bytes after 108-byte region [0x75169c9e0250,0x75169c9e02bc)
+allocated by thread T0 here:
+    #0 0x59c83d801651 in operator new[](unsigned long) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x152651) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #1 0x59c83d6fe715 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x4f715) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #2 0x59c83d6fde39 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x4ee39) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #3 0x59c83d6ffc52 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x50c52) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #4 0x59c83d70016b in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile>>&) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x5116b) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #5 0x59c83d6ed140 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x3e140) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #6 0x59c83d717e46 in main (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x68e46) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+    #7 0x78669d62a600 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #8 0x78669d62a717 in __libc_start_main csu/../csu/libc-start.c:360:3
+    #9 0x59c83d6e1944 in _start (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x32944) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow (/home/madcap/fuzzing-demo/fuzz-cpp/fuzzer+0x10bf7e) (BuildId: c1997f0534a28de266231f1594e0c9ff972e875f) in __asan_memcpy
+Shadow bytes around the buggy address:
+  0x75169c9e0000: fa fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+  0x75169c9e0080: 00 00 00 00 00 fa fa fa fa fa fa fa fa fa 00 00
+  0x75169c9e0100: 00 00 00 00 00 00 00 00 00 00 00 fa fa fa fa fa
+  0x75169c9e0180: fa fa fa fa 00 00 00 00 00 00 00 00 00 00 00 00
+  0x75169c9e0200: 00 04 fa fa fa fa fa fa fa fa 00 00 00 00 00 00
+=>0x75169c9e0280: 00 00 00 00 00 00 00[04]fa fa fa fa fa fa fa fa
+  0x75169c9e0300: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x75169c9e0380: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x75169c9e0400: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x75169c9e0480: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x75169c9e0500: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==7218==ABORTING
+MS: 0 ; base unit: 0000000000000000000000000000000000000000
+0xef,0xbe,0xad,0xde,0x1,0x0,0xff,0xff,0xff,0x36,0x2d,0x4b,0x59,0x75,0xc5,0x5a,0xeb,0x6f,0xd5,0x41,0x1c,0x25,0x71,0xc5,0x90,0xd9,0xdb,0x2f,0xdb,0xf6,0x6d,0x2b,0xb8,0x94,0x47,0x2e,0xf5,0x5f,0xa4,0x4e,0x40,0x39,0xf6,0xa9,0x57,0x3f,0xd0,0x9b,0xdb,0x69,0xe7,0x96,0x5f,0x81,0x4e,0xae,0x65,0xc9,0x3c,0x9c,0x69,0xbf,0x47,0x58,0xd1,0x83,0xe4,0x28,0xe8,0x9c,0xe1,0x4c,0x9b,0x75,0xf0,0x8,0xf2,0xec,0x2c,0x44,0xec,0x68,0xc9,0xf9,0x60,0xfe,0x5e,0x8f,0x9e,0x46,0xb3,0x7d,0x6a,0x2a,0x74,0x88,0x43,0x26,0x2,0x82,0x32,0xad,0x26,0x2b,0xff,0x47,0x38,0xd,
+\357\276\255\336\001\000\377\377\3776-KYu\305Z\353o\325A\034%q\305\220\331\333/\333\366m+\270\224G.\365_\244N@9\366\251W?\320\233\333i\347\226_\201N\256e\311<\234i\277GX\321\203\344(\350\234\341L\233u\360\010\362\354,D\354h\311\371`\376^\217\236F\263}j*t\210C&\002\2022\255&+\377G8\015
+artifact_prefix='crashes/crash-'; Test unit written to crashes/crash-crash-f521a9ad88fab4b4d0548be2f471a0a3f01342f8
+Base64: 776t3gEA////Ni1LWXXFWutv1UEcJXHFkNnbL9v2bSu4lEcu9V+kTkA59qlXP9Cb22nnll+BTq5lyTycab9HWNGD5CjonOFMm3XwCPLsLETsaMn5YP5ej55Gs31qKnSIQyYCgjKtJiv/RzgN

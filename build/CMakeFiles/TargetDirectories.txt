@@ -1,0 +1,5 @@
+/home/madcap/fuzzing-demo/build/CMakeFiles/packet_parser.dir
+/home/madcap/fuzzing-demo/build/CMakeFiles/packet_app.dir
+/home/madcap/fuzzing-demo/build/CMakeFiles/fuzz_afl.dir
+/home/madcap/fuzzing-demo/build/CMakeFiles/edit_cache.dir
+/home/madcap/fuzzing-demo/build/CMakeFiles/rebuild_cache.dir

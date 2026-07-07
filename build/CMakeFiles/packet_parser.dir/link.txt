@@ -1,0 +1,2 @@
+/usr/bin/ar qc libpacket_parser.a CMakeFiles/packet_parser.dir/src/packet_parser.cpp.o
+/usr/bin/ranlib libpacket_parser.a
