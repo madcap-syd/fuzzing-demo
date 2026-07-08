@@ -1,4 +1,4 @@
-name: Security Fuzzing Pipeline
+name: Multi-Fuzzer Security Pipeline
 
 on:
   push:
@@ -6,130 +6,81 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    # Nightly fuzzing at 2 AM UTC
     - cron: '0 2 * * *'
 
 jobs:
-  # ============================================
-  # Job 1: Build Docker Image
-  # ============================================
   build:
-    name: Build Docker Image
+    name: Build Multi-Fuzzer Image
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
+      - name: Build Docker image (libFuzzer + HonggFuzz)
         run: |
           docker build -t fuzzing-demo:latest .
-          echo "✅ Docker image built successfully"
+          echo "✅ Multi-fuzzer image built"
 
-      - name: Test Docker image
+      - name: Test both fuzzers
         run: |
-          docker run --rm fuzzing-demo:latest echo "Docker image works!"
+          docker run --rm -e FUZZER=libfuzzer -e FUZZ_TIME=5 fuzzing-demo:latest
+          docker run --rm -e FUZZER=honggfuzz -e FUZZ_TIME=5 fuzzing-demo:latest
 
-  # ============================================
-  # Job 2: PR-Check (Fast Fuzzing)
-  # ============================================
   fuzz-pr-check:
-    name: PR-Check (10 min fuzzing)
+    name: PR-Check (libFuzzer, 10 min)
     needs: build
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Run libFuzzer in Docker (10 minutes)
+      - name: Run libFuzzer (10 min)
         run: |
           docker run --rm \
-            --name fuzz-pr-check \
-            --memory=1g \
-            --cpus=2 \
-            --pids-limit=100 \
+            --memory=1g --cpus=2 \
+            -e FUZZER=libfuzzer -e FUZZ_TIME=600 \
             -v ${{ github.workspace }}/corpus:/corpus \
             -v ${{ github.workspace }}/crashes:/crashes \
-            fuzzing-demo:latest \
-            ./fuzz_target ./corpus \
-              -artifact_prefix=/crashes/ \
-              -max_total_time=600 \
-              -rss_limit_mb=1024 || true
+            fuzzing-demo:latest || true
 
-      - name: Check for crashes
-        id: check_crashes
+      - name: Check crashes
         run: |
           if [ "$(ls -A ./crashes/ 2>/dev/null)" ]; then
-            echo " CRASHES FOUND"
-            echo "has_crashes=true" >> $GITHUB_OUTPUT
+            echo "❌ CRASHES FOUND by libFuzzer"
+            ls -la ./crashes/
             exit 1
           else
-            echo "✅ No crashes found"
-            echo "has_crashes=false" >> $GITHUB_OUTPUT
+            echo "✅ No crashes"
           fi
 
-      - name: Upload crash artifacts
+      - name: Upload artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzzing-crashes
+          name: libfuzzer-crashes
           path: crashes/
-          retention-days: 7
 
-      - name: Comment on PR
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: ' **Fuzzing failed!** Crashes found. Check artifacts for details.'
-            })
-
-  # ============================================
-  # Job 3: Nightly Deep Fuzzing
-  # ============================================
   fuzz-nightly:
-    name: Nightly Deep Fuzzing (4 hours)
+    name: Nightly (HonggFuzz, 4h)
     needs: build
-    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Run extended fuzzing (4 hours)
+      - name: Run HonggFuzz (4 hours)
         run: |
           docker run --rm \
-            --name fuzz-nightly \
-            --memory=2g \
-            --cpus=4 \
+            --memory=2g --cpus=4 \
+            -e FUZZER=honggfuzz -e FUZZ_TIME=14400 \
             -v ${{ github.workspace }}/corpus:/corpus \
             -v ${{ github.workspace }}/crashes-nightly:/crashes \
-            fuzzing-demo:latest \
-            ./fuzz_target ./corpus \
-              -artifact_prefix=/crashes/ \
-              -max_total_time=14400 \
-              -jobs=4 \
-              -workers=4 || true
+            fuzzing-demo:latest || true
 
       - name: Upload nightly artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-fuzzing-results
+          name: honggfuzz-results
           path: |
             crashes-nightly/
             corpus/
           retention-days: 30
-
-      - name: Generate summary
-        run: |
-          echo "## Nightly Fuzzing Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🕐 Duration: 4 hours" >> $GITHUB_STEP_SUMMARY
-          echo "💾 Crashes found: $(ls -1 ./crashes-nightly/ 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "📊 Corpus size: $(du -sh ./corpus/ 2>/dev/null | cut -f1)" >> $GITHUB_STEP_SUMMARY
