@@ -9,23 +9,18 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  build:
-    name: Build Multi-Fuzzer Image
+  fuzz-pr-check:
+    name: PR-Check (libFuzzer, 10 min)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
       
       - name: Build Docker image
         run: |
           docker build -t fuzzing-demo:latest .
           echo "✅ Docker image built"
-
-  fuzz-pr-check:
-    name: PR-Check (libFuzzer, 10 min)
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       
       - name: Create directories
         run: mkdir -p crashes corpus
@@ -85,8 +80,6 @@ jobs:
             Commit: ${{ github.sha }}
             
             Check pipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            Jira ticket will be created automatically.
           to: security-team@company.com
           from: fuzzing-pipeline@company.com
       
