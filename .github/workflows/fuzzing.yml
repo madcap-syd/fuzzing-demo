@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Build Docker image
         run: |
           docker build -t fuzzing-demo:latest .
@@ -24,13 +24,12 @@ jobs:
     name: PR-Check (libFuzzer, 10 min)
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Create crashes directory
-        run: mkdir -p crashes
-
+      
+      - name: Create directories
+        run: mkdir -p crashes corpus
+      
       - name: Run libFuzzer (10 min)
         run: |
           docker run --rm \
@@ -40,21 +39,71 @@ jobs:
             fuzzing-demo:latest \
             ./fuzz_target ./corpus \
               -artifact_prefix=/crashes/ \
-              -max_total_time=600
-
+              -max_total_time=600 2>&1 | tee fuzzing.log
+      
       - name: Check crashes
+        id: check
         run: |
           if [ "$(ls -A ./crashes/ 2>/dev/null)" ]; then
-            echo " CRASHES FOUND"
+            echo "❌ CRASHES FOUND"
             ls -la ./crashes/
-            exit 1
+            echo "has_crashes=true" >> $GITHUB_OUTPUT
           else
             echo "✅ No crashes"
+            echo "has_crashes=false" >> $GITHUB_OUTPUT
           fi
-
+      
+      - name: Process crashes with DefectDojo
+        if: steps.check.outputs.has_crashes == 'true'
+        run: |
+          python3 scripts/upload_defectdojo.py ./fuzzing.log ./crashes
+      
+      - name: Create Jira tickets
+        if: steps.check.outputs.has_crashes == 'true'
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_PROJECT: SEC
+        run: |
+          python3 scripts/create_jira.py
+      
+      - name: Send email notification
+        if: steps.check.outputs.has_crashes == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "🚨 Security Alert: Crash found in ${{ github.repository }}"
+          body: |
+            Fuzzing pipeline found a crash!
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            
+            Check pipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            Jira ticket will be created automatically.
+          to: security-team@company.com
+          from: fuzzing-pipeline@company.com
+      
+      - name: Fail pipeline if crashes found
+        if: steps.check.outputs.has_crashes == 'true'
+        run: |
+          echo "❌ Pipeline failed due to crashes"
+          exit 1
+      
       - name: Upload artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: crashes
-          path: crashes/
+          path: |
+            crashes/
+            defectdojo_findings.json
+            jira_ticket.json
+            email_notification.txt
+            fuzzing.log
