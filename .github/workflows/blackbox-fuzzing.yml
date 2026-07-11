@@ -1,0 +1,49 @@
+name: Black Box Fuzzing Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  blackbox-fuzz:
+    name: Black Box Fuzzing (300 iterations)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: |
+          cd blackbox-fuzzing
+          docker build -t blackbox-fuzz:latest .
+      
+      - name: Run Black Box Fuzzing
+        run: |
+          cd blackbox-fuzzing
+          docker run --rm \
+            -v ${{ github.workspace }}/blackbox-fuzzing/crashes:/fuzz/crashes \
+            blackbox-fuzz:latest \
+            ./fuzz.sh
+      
+      - name: Check crashes
+        id: check
+        run: |
+          cd blackbox-fuzzing
+          if [ "$(ls -A ./crashes/ 2>/dev/null)" ]; then
+            echo "❌ CRASHES FOUND"
+            ls -la ./crashes/
+            echo "has_crashes=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No crashes"
+            echo "has_crashes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackbox-crashes
+          path: blackbox-fuzzing/crashes/
