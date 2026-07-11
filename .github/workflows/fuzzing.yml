@@ -1,5 +1,4 @@
 name: Multi-Fuzzer Security Pipeline
-
 on:
   push:
     branches: ["**"]
@@ -7,7 +6,6 @@ on:
     branches: ["**"]
   schedule:
     - cron: '0 2 * * *'
-
 jobs:
   fuzz-pr-check:
     name: PR-Check (libFuzzer, 10 min)
@@ -16,15 +14,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: false
-      
       - name: Build Docker image
-        run: |
-          docker build -t fuzzing-demo:latest .
-          echo "✅ Docker image built"
-      
+        run: docker build -t fuzzing-demo:latest .
       - name: Create directories
         run: mkdir -p crashes corpus
-      
       - name: Run libFuzzer (10 min)
         run: |
           docker run --rm \
@@ -35,7 +28,6 @@ jobs:
             ./fuzz_target ./corpus \
               -artifact_prefix=/crashes/ \
               -max_total_time=600 2>&1 | tee fuzzing.log
-      
       - name: Check crashes
         id: check
         run: |
@@ -47,31 +39,27 @@ jobs:
             echo "✅ No crashes"
             echo "has_crashes=false" >> $GITHUB_OUTPUT
           fi
-      
       - name: Deduplicate with Ollama
         if: steps.check.outputs.has_crashes == 'true'
         env:
           OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
-          OLLAMA_MODEL: llama3.2
           DEMO_MODE: true
-        run: |
-          python3 scripts/deduplicate_ollama.py ./fuzzing.log ./crashes
-      
+        run: python3 scripts/deduplicate_ollama.py ./fuzzing.log ./crashes
       - name: Upload to DefectDojo
         if: steps.check.outputs.has_crashes == 'true'
-        run: |
-          python3 scripts/upload_defectdojo.py ./fuzzing.log ./crashes
-      
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+          DEMO_MODE: ${{ secrets.DEFECTDOJO_URL == '' && 'true' || 'false' }}
+        run: python3 scripts/upload_defectdojo.py ./fuzzing.log ./crashes
       - name: Create Jira tickets
         if: steps.check.outputs.has_crashes == 'true'
         env:
           JIRA_URL: ${{ secrets.JIRA_URL }}
           JIRA_USER: ${{ secrets.JIRA_USER }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-          JIRA_PROJECT: SEC
-        run: |
-          python3 scripts/create_jira.py
-      
+          DEMO_MODE: ${{ secrets.JIRA_URL == '' && 'true' || 'false' }}
+        run: python3 scripts/create_jira.py
       - name: Send email notification
         if: steps.check.outputs.has_crashes == 'true'
         continue-on-error: true
@@ -82,16 +70,18 @@ jobs:
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: "🚨 Security Alert: Crash found"
-          body: "Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body: |
+            Fuzzing pipeline found a crash!
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref }}
+            Pipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           to: security-team@company.com
           from: fuzzing-pipeline@company.com
-      
       - name: Fail pipeline if crashes found
         if: steps.check.outputs.has_crashes == 'true'
         run: |
           echo "❌ Pipeline failed due to crashes"
           exit 1
-      
       - name: Upload artifacts
         if: failure()
         uses: actions/upload-artifact@v4
