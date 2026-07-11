@@ -1,0 +1,25 @@
+{
+  "fields": {
+    "project": {
+      "key": "SEC"
+    },
+    "summary": "[FUZZING] [FUZZING] Null Pointer Dereference",
+    "description": "## Vulnerability Found\n\n**Type:** Null Pointer Dereference\n**Severity:** Critical\n**CWE:** 476\n**CVSS:** 9.8\n**Date:** 2026-07-10T20:59:51.002016\n\n### Stack Trace\n```\n#0 0x561668919fd5 in vulnerable_function(unsigned char const*, unsigned long) /build/harness.cpp:10:18\n#1 0x561668919fd5 in LLVMFuzzerTestOneInput /build/harness.cpp:16:5\n#10 0x561668824964 in _start (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)\n```\n\n### Reproduction\n```bash\n./fuzz_target crash_file\n```",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "priority": {
+      "name": "Highest"
+    },
+    "labels": [
+      "security",
+      "fuzzing",
+      "auto-generated"
+    ],
+    "components": [
+      {
+        "name": "Security"
+      }
+    ]
+  }
+}

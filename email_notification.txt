@@ -1,0 +1,49 @@
+From: fuzzing@company.com
+To: security-team@company.com
+Subject: 🚨 SECURITY ALERT: [FUZZING] Null Pointer Dereference
+
+
+Fuzzing Pipeline Security Alert
+================================
+
+Vulnerability Detected!
+
+Type: [FUZZING] Null Pointer Dereference
+Severity: Critical
+CWE: 476
+CVSS: 9.8
+File: /build/harness.cpp:10
+
+Description:
+## Vulnerability Found
+
+**Type:** Null Pointer Dereference
+**Severity:** Critical
+**CWE:** 476
+**CVSS:** 9.8
+**Date:** 2026-07-10T20:59:51.002016
+
+### Stack Trace
+```
+#0 0x561668919fd5 in vulnerable_function(unsigned char const*, unsigned long) /build/harness.cpp:10:18
+#1 0x561668919fd5 in LLVMFuzzerTestOneInput /build/harness.cpp:16:5
+#10 0x561668824964 in _start (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+```
+
+### Reproduction
+```bash
+./fuzz_target crash_file
+```
+
+Actions Required:
+1. Review the vulnerability
+2. Fix the issue
+3. Run tests to verify fix
+4. Update this ticket
+
+Pipeline: GitHub Actions
+Repository: fuzzing-demo
+Date: 2026-07-10T20:59:51.149766
+
+---
+This is an automated message from Fuzzing Pipeline

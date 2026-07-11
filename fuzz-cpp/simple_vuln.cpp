@@ -1,71 +1,68 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-// Уязвимость 1: Heap Buffer Overflow
+// Уязвимость 1: Heap Buffer Overflow (CWE-122)
 void heap_overflow(const uint8_t* data, size_t size) {
-    char buffer[64];
-    if (size > 0) {
-        memcpy(buffer, data, size);  // ❌ Нет проверки size!
-        printf("Processed: %s\n", buffer);
+    char* buffer = new char[16];
+    if (data[0] == 'A' && size > 16) {
+        memcpy(buffer, data, size);  // ПЕРЕПОЛНЕНИЕ!
     }
-}
-
-// Уязвимость 2: Stack Buffer Overflow
-void stack_overflow(const char* input) {
-    char buffer[32];
-    strcpy(buffer, input);  // ❌ Нет ограничения!
-}
-
-// Уязвимость 3: Integer Overflow
-void int_overflow(size_t width, size_t height) {
-    size_t size = width * height;  // ❌ Может переполниться!
-    char* buffer = new char[size];
-    buffer[0] = 'A';
     delete[] buffer;
 }
 
-// Уязвимость 4: Use-After-Free
-void use_after_free() {
-    int* ptr = new int(42);
-    delete ptr;
-    printf("%d\n", *ptr);  // ❌ UAF!
+// Уязвимость 2: Null Pointer Dereference (CWE-476)
+void null_deref(const uint8_t* data, size_t size) {
+    if (data[0] == 'B' && size > 4) {
+        int* ptr = nullptr;
+        volatile int x = ptr[0];  // SEGFAULT!
+    }
 }
 
-// Уязвимость 5: Null Pointer Dereference
-void null_deref(int* data) {
-    if (data[0] > 0) {
-        printf("%d\n", data[0]);  // ❌ data может быть nullptr
+// Уязвимость 3: Use-After-Free (CWE-416)
+void use_after_free(const uint8_t* data, size_t size) {
+    if (data[0] == 'C' && size > 4) {
+        int* ptr = new int(42);
+        delete ptr;
+        volatile int x = *ptr;  // UAF!
+    }
+}
+
+// Уязвимость 4: Stack Buffer Overflow (CWE-121)
+void stack_overflow(const uint8_t* data, size_t size) {
+    if (data[0] == 'D' && size > 32) {
+        char buffer[16];
+        strcpy(buffer, (const char*)data);  // ПЕРЕПОЛНЕНИЕ СТЕКА!
+    }
+}
+
+// Уязвимость 5: Integer Overflow (CWE-190)
+void int_overflow(const uint8_t* data, size_t size) {
+    if (size >= 8) {
+        uint32_t w = *(uint32_t*)data;
+        uint32_t h = *(uint32_t*)(data + 4);
+        if (w > 0 && h > 0) {
+            size_t total = w * h;  // МОЖЕТ ПЕРЕПОЛНИТЬСЯ!
+            if (total < 1000) {
+                char* buf = new char[total];
+                buf[0] = 'X';
+                delete[] buf;
+            }
+        }
     }
 }
 
 // Harness для LibFuzzer
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    if (size < 8) return 0;
+    if (size < 1) return 0;
     
-    // Пробуем разные уязвимости
-    heap_overflow(data, size);
-    
-    if (size >= 4) {
-        uint32_t value = *(uint32_t*)data;
-        if (value > 1000) {
-            stack_overflow((const char*)data);
-        }
+    switch (data[0]) {
+        case 'A': heap_overflow(data, size); break;
+        case 'B': null_deref(data, size); break;
+        case 'C': use_after_free(data, size); break;
+        case 'D': stack_overflow(data, size); break;
+        default: int_overflow(data, size); break;
     }
-    
-    if (size >= 8) {
-        size_t w = *(size_t*)data;
-        size_t h = *(size_t*)(data + 4);
-        int_overflow(w, h);
-    }
-    
-    if (size >= 16 && data[0] == 'A') {
-        use_after_free();
-    }
-    
-    if (size >= 16 && data[0] == 'B') {
-        null_deref(nullptr);
-    }
-    
     return 0;
 }

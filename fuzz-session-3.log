@@ -1,0 +1,33 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 3
+INFO: Loaded 1 modules   (14 inline 8-bit counters): 14 [0x5f1907997ed0, 0x5f1907997ede), 
+INFO: Loaded 1 PC tables (14 PCs): 14 [0x5f1907997ee0,0x5f1907997fc0), 
+INFO:        3 files found in ./corpus
+INFO: -max_len is not provided; libFuzzer will not generate inputs larger than 4096 bytes
+INFO: seed corpus: files: 3 min: 5b max: 6b total: 16b rss: 30Mb
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==1==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x5f1907954fd5 bp 0x7ffc3013f300 sp 0x7ffc3013f2b0 T0)
+==1==The signal is caused by a WRITE memory access.
+==1==Hint: address points to the zero page.
+==1==WARNING: invalid path to external symbolizer!
+==1==WARNING: Failed to use and restart external symbolizer!
+    #0 0x5f1907954fd5  (/fuzz/fuzz_target+0x118fd5) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #1 0x5f190787b323  (/fuzz/fuzz_target+0x3f323) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #2 0x5f190787aa79  (/fuzz/fuzz_target+0x3ea79) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #3 0x5f190787c6e8  (/fuzz/fuzz_target+0x406e8) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #4 0x5f190787cbd2  (/fuzz/fuzz_target+0x40bd2) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #5 0x5f190786af22  (/fuzz/fuzz_target+0x2ef22) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #6 0x5f1907894c12  (/fuzz/fuzz_target+0x58c12) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #7 0x7e1e63921d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f) (BuildId: 095c7ba148aeca81668091f718047078d57efddb)
+    #8 0x7e1e63921e3f  (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f) (BuildId: 095c7ba148aeca81668091f718047078d57efddb)
+    #9 0x5f190785f964  (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+
+AddressSanitizer can not provide additional info.
+SUMMARY: AddressSanitizer: SEGV (/fuzz/fuzz_target+0x118fd5) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c) 
+==1==ABORTING
+MS: 0 ; base unit: 0000000000000000000000000000000000000000
+0x46,0x55,0x5a,0x5a,0xa,
+FUZZ\012
+artifact_prefix='/crashes/'; Test unit written to /crashes/crash-c8ec8f720f3035481b144fc7de253c7f2978a09e
+Base64: RlVaWgo=

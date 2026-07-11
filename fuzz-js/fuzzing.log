@@ -1,0 +1,33 @@
+INFO: Using generated seed: 1848267755
+(node:12201) Warning: Accessing non-existent property 'default' of module exports inside circular dependency
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: Cannot find module './vulnerable'
+Require stack:
+- /home/madcap/fuzzing-demo/fuzz-js/fuzz_target.js
+    at Function.Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function.Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+    at Object.<anonymous> (/home/madcap/fuzzing-demo/fuzz-js/fuzz_target.js:1:45)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Module._compile (/home/madcap/fuzzing-demo/fuzz-js/node_modules/source-map-support/source-map-support.js:568:25)
+    at Module.replacementCompile (/home/madcap/fuzzing-demo/fuzz-js/node_modules/append-transform/index.js:60:13)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1838:10)
+    at Object.<anonymous> (/home/madcap/fuzzing-demo/fuzz-js/node_modules/append-transform/index.js:64:4)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function.Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at cjsLoader (node:internal/modules/esm/translators:309:5)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/translators:202:7)
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at loadFuzzFunction (/home/madcap/fuzzing-demo/fuzz-js/node_modules/@jazzer.js/core/core.ts:345:21)
+    at startFuzzing (/home/madcap/fuzzing-demo/fuzz-js/node_modules/@jazzer.js/core/core.ts:225:17) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [ '/home/madcap/fuzzing-demo/fuzz-js/fuzz_target.js' ]
+}

@@ -1,0 +1,32 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 3645008685
+INFO: Loaded 1 modules   (14 inline 8-bit counters): 14 [0x56166895ced0, 0x56166895cede), 
+INFO: Loaded 1 PC tables (14 PCs): 14 [0x56166895cee0,0x56166895cfc0), 
+INFO:        3 files found in ./corpus
+INFO: -max_len is not provided; libFuzzer will not generate inputs larger than 4096 bytes
+INFO: seed corpus: files: 3 min: 5b max: 6b total: 16b rss: 30Mb
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==1==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x561668919fd5 bp 0x7ffdc302f610 sp 0x7ffdc302f5c0 T0)
+==1==The signal is caused by a WRITE memory access.
+==1==Hint: address points to the zero page.
+    #0 0x561668919fd5 in vulnerable_function(unsigned char const*, unsigned long) /build/harness.cpp:10:18
+    #1 0x561668919fd5 in LLVMFuzzerTestOneInput /build/harness.cpp:16:5
+    #2 0x561668840323 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) (/fuzz/fuzz_target+0x3f323) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #3 0x56166883fa79 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) (/fuzz/fuzz_target+0x3ea79) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #4 0x5616688416e8 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile> >&) (/fuzz/fuzz_target+0x406e8) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #5 0x561668841bd2 in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile> >&) (/fuzz/fuzz_target+0x40bd2) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #6 0x56166882ff22 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) (/fuzz/fuzz_target+0x2ef22) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #7 0x561668859c12 in main (/fuzz/fuzz_target+0x58c12) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+    #8 0x73cc12467d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f) (BuildId: 095c7ba148aeca81668091f718047078d57efddb)
+    #9 0x73cc12467e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f) (BuildId: 095c7ba148aeca81668091f718047078d57efddb)
+    #10 0x561668824964 in _start (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)
+
+AddressSanitizer can not provide additional info.
+SUMMARY: AddressSanitizer: SEGV /build/harness.cpp:10:18 in vulnerable_function(unsigned char const*, unsigned long)
+==1==ABORTING
+MS: 0 ; base unit: 0000000000000000000000000000000000000000
+0x46,0x55,0x5a,0x5a,0xa,
+FUZZ\012
+artifact_prefix='/crashes/'; Test unit written to /crashes/crash-c8ec8f720f3035481b144fc7de253c7f2978a09e
+Base64: RlVaWgo=

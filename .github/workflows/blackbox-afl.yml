@@ -1,0 +1,86 @@
+name: Black Box Fuzzing with AFL++
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  schedule:
+    - cron: '0 4 * * *'
+jobs:
+  afl-blackbox:
+    name: AFL++ Black Box (QEMU Mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install AFL++ and dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y afl++ qemu-user gcc make
+          echo "AFL++ installed"
+          afl-fuzz --help 2>&1 | head -5
+      - name: Build target binary (Black Box)
+        run: |
+          cd blackbox-target
+          gcc -O2 -fno-stack-protector -z execstack -o target vulnerable.c
+          chmod +x target
+          echo "Target binary built"
+          file target
+      - name: Create corpus
+        run: |
+          mkdir -p corpus crashes
+          echo "test" > corpus/input1.txt
+          echo "AAAA" > corpus/input2.txt
+          echo "CRASH" > corpus/input3.txt
+          echo "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" > corpus/input4.txt
+          echo "Corpus created"
+          ls -lh corpus/
+      - name: Run AFL++ (QEMU Mode - 5 min)
+        run: |
+          echo "Starting AFL++ in QEMU mode..."
+          echo "This will run for 5 minutes..."
+          timeout 300 afl-fuzz -Q -i corpus -o crashes -t 5000 -- blackbox-target/target @@ || true
+          echo "AFL++ completed"
+      - name: Check results
+        run: |
+          echo "=== AFL++ RESULTS ==="
+          if [ -d "crashes/default/crashes" ]; then
+            CRASH_COUNT=$(ls -1 crashes/default/crashes/ 2>/dev/null | wc -l)
+            echo "Crashes found: $CRASH_COUNT"
+            echo ""
+            echo "Crash files:"
+            ls -lh crashes/default/crashes/ | head -10
+          else
+            echo "No crashes found (or different directory structure)"
+            ls -la crashes/ 2>/dev/null || echo "No crashes directory"
+          fi
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: afl-blackbox-results
+          path: |
+            crashes/
+            corpus/
+          retention-days: 30
+      - name: Generate report
+        run: |
+          echo "=== AFL++ BLACK BOX FUZZING REPORT ===" > afl-report.txt
+          echo "Date: $(date)" >> afl-report.txt
+          echo "Mode: QEMU (Black Box)" >> afl-report.txt
+          echo "Target: blackbox-target/target" >> afl-report.txt
+          echo "Vulnerabilities:" >> afl-report.txt
+          echo "  1. Buffer Overflow (CWE-120)" >> afl-report.txt
+          echo "  2. Null Pointer Dereference (CWE-476)" >> afl-report.txt
+          if [ -d "crashes/default/crashes" ]; then
+            CRASH_COUNT=$(ls -1 crashes/default/crashes/ 2>/dev/null | wc -l)
+            echo "Total crashes: $CRASH_COUNT" >> afl-report.txt
+          else
+            echo "Results: No crashes found" >> afl-report.txt
+          fi
+          cat afl-report.txt
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: afl-report
+          path: afl-report.txt
