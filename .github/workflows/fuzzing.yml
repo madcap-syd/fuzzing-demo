@@ -48,17 +48,31 @@ jobs:
             echo "has_crashes=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Process crashes with DefectDojo
+      - name: Deduplicate with Ollama
+        if: steps.check.outputs.has_crashes == 'true'
+        env:
+          OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
+          OLLAMA_MODEL: llama3.2
+          DEMO_MODE: true
+        run: |
+          python3 scripts/deduplicate_ollama.py ./fuzzing.log ./crashes
+      
+      - name: Upload to DefectDojo
         if: steps.check.outputs.has_crashes == 'true'
         run: |
           python3 scripts/upload_defectdojo.py ./fuzzing.log ./crashes
       
       - name: Create Jira tickets
         if: steps.check.outputs.has_crashes == 'true'
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_PROJECT: SEC
         run: |
           python3 scripts/create_jira.py
       
-      - name: Send email notification (optional)
+      - name: Send email notification
         if: steps.check.outputs.has_crashes == 'true'
         continue-on-error: true
         uses: dawidd6/action-send-mail@v3
@@ -87,4 +101,5 @@ jobs:
             crashes/
             defectdojo_findings.json
             jira_ticket.json
+            crashes_db.json
             fuzzing.log
