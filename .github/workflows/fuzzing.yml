@@ -55,31 +55,20 @@ jobs:
       
       - name: Create Jira tickets
         if: steps.check.outputs.has_crashes == 'true'
-        env:
-          JIRA_URL: ${{ secrets.JIRA_URL }}
-          JIRA_USER: ${{ secrets.JIRA_USER }}
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-          JIRA_PROJECT: SEC
         run: |
           python3 scripts/create_jira.py
       
-      - name: Send email notification
+      - name: Send email notification (optional)
         if: steps.check.outputs.has_crashes == 'true'
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 587
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "🚨 Security Alert: Crash found in ${{ github.repository }}"
-          body: |
-            Fuzzing pipeline found a crash!
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref }}
-            Commit: ${{ github.sha }}
-            
-            Check pipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          subject: "🚨 Security Alert: Crash found"
+          body: "Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           to: security-team@company.com
           from: fuzzing-pipeline@company.com
       
@@ -98,5 +87,4 @@ jobs:
             crashes/
             defectdojo_findings.json
             jira_ticket.json
-            email_notification.txt
             fuzzing.log
