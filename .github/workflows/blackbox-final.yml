@@ -1,4 +1,4 @@
-name: Black Box Final - WORKING
+name: Black Box Final - WORKING CRASHES
 
 on:
   push:
@@ -13,61 +13,77 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Build target
+      - name: Build target (NO optimizations)
         run: |
-          mkdir -p blackbox-target/corpus blackbox-target/crashes
           cd blackbox-target
-          gcc -O2 -fno-stack-protector -z execstack -o target vulnerable.c
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
           chmod +x target
-          echo "Target built"
+          echo "Target built with NO optimizations"
       
       - name: Create corpus
         run: |
           cd blackbox-target
-          echo "test" > corpus/input1.txt
-          echo "AAAA" > corpus/input2.txt
-          echo "CRASH" > corpus/crash_trigger.txt
-          python3 -c "print('A' * 200)" > corpus/large.txt
+          mkdir -p corpus crashes
+          echo "test" > corpus/small.txt
+          python3 -c "print('A' * 100)" > corpus/medium.txt
+          python3 -c "print('B' * 200)" > corpus/large.txt
+          python3 -c "print('C' * 500)" > corpus/huge.txt
           echo "Corpus created:"
           ls -lh corpus/
       
-      - name: Run Black Box Fuzzing
+      - name: Run Black Box Fuzzing (300 iterations)
         id: fuzz
         run: |
           cd blackbox-target
           CRASH_COUNT=0
           
           echo "Starting Black Box Fuzzing..."
+          echo "Target: ./target (NO optimizations)"
+          echo "Iterations: 300"
+          echo ""
           
           for i in $(seq 1 300); do
+            # Берём случайный input
             SEED=$(ls corpus | shuf -n 1)
             cp corpus/$SEED /tmp/mutated.txt
-            dd if=/dev/urandom bs=1 count=$((RANDOM % 100)) >> /tmp/mutated.txt 2>/dev/null
             
+            # Добавляем случайные данные (0-200 байт)
+            RANDOM_SIZE=$((RANDOM % 200))
+            dd if=/dev/urandom bs=1 count=$RANDOM_SIZE >> /tmp/mutated.txt 2>/dev/null
+            
+            # Запускаем
             timeout 1s ./target /tmp/mutated.txt > /dev/null 2>&1
             EXIT_CODE=$?
             
-            if [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 136 ]; then
+            # Проверяем краш (139 = segfault, 134 = abort)
+            if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ]; then
               CRASH_COUNT=$((CRASH_COUNT + 1))
-              echo "CRASH #$CRASH_COUNT (iter $i, exit $EXIT_CODE)"
+              echo "CRASH #$CRASH_COUNT! Exit: $EXIT_CODE (iter $i)"
               cp /tmp/mutated.txt crashes/crash_$(printf "%03d" $CRASH_COUNT).txt
             fi
             
+            # Прогресс каждые 50 итераций
             if [ $((i % 50)) -eq 0 ]; then
               echo "Progress: $i/300 | Crashes: $CRASH_COUNT"
             fi
           done
           
+          echo ""
+          echo "Fuzzing completed!"
           echo "Total crashes: $CRASH_COUNT"
           echo "count=$CRASH_COUNT" >> $GITHUB_OUTPUT
       
-      - name: Show results
+      - name: Show crash files
+        if: steps.fuzz.outputs.count > 0
         run: |
           cd blackbox-target
           echo ""
-          echo "RESULTS:"
-          ls -lh crashes/ | head -10
-          echo "Total: $(ls -1 crashes/ | wc -l) crashes"
+          echo "CRASH FILES:"
+          ls -lh crashes/ | head -20
+          
+          UNIQUE=$(ls -1 crashes/ | wc -l)
+          echo ""
+          echo "Total unique crash files: $UNIQUE"
       
       - name: Upload artifacts
         if: always()
@@ -77,3 +93,4 @@ jobs:
           path: |
             blackbox-target/crashes/
             blackbox-target/corpus/
+          retention-days: 30
