@@ -2,9 +2,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-void process_data(char *input) {
+void vulnerable_function(char *input) {
+    // Гарантированный краш при определённом паттерне
+    if (strlen(input) > 4) {
+        if (input[0] == 'C' && input[1] == 'R' && 
+            input[2] == 'A' && input[3] == 'S' && input[4] == 'H') {
+            // Null pointer dereference - ТОЧНО крашит!
+            volatile int *ptr = NULL;
+            *ptr = 42;
+        }
+    }
+    
+    // Buffer overflow - может крашить
     char buffer[64];
-    strcpy(buffer, input);  // Buffer overflow!
+    strcpy(buffer, input);
 }
 
 int main(int argc, char **argv) {
@@ -22,7 +33,7 @@ int main(int argc, char **argv) {
     data[size] = '\0';
     fclose(f);
     
-    process_data(data);
+    vulnerable_function(data);
     free(data);
     return 0;
 }
