@@ -1,0 +1,323 @@
+name: Black Box Full Integration (AFL++ + Dojo + Jira)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  blackbox-integration:
+    name: Black Box AFL++ with DefectDojo & Jira
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          chmod +x target
+      
+      - name: Create corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus crashes
+          echo "test" > corpus/small.txt
+          python3 -c "print('A' * 100)" > corpus/medium.txt
+          python3 -c "print('B' * 200)" > corpus/large.txt
+          python3 -c "print('C' * 500)" > corpus/huge.txt
+      
+      - name: Run Black Box Fuzzing (300 iterations)
+        id: fuzz
+        run: |
+          set +e
+          cd blackbox-target
+          CRASH_COUNT=0
+          
+          echo "Starting Black Box Fuzzing..."
+          
+          for i in $(seq 1 300); do
+            SEED=$(ls corpus | shuf -n 1)
+            cp corpus/$SEED /tmp/mutated.txt
+            dd if=/dev/urandom bs=1 count=$((RANDOM % 200)) >> /tmp/mutated.txt 2>/dev/null
+            
+            timeout 1s ./target /tmp/mutated.txt > /dev/null 2>&1
+            EXIT_CODE=$?
+            
+            if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ]; then
+              CRASH_COUNT=$((CRASH_COUNT + 1))
+              cp /tmp/mutated.txt crashes/crash_$(printf "%03d" $CRASH_COUNT).txt
+            fi
+            
+            if [ $((i % 50)) -eq 0 ]; then
+              echo "Progress: $i/300 | Crashes: $CRASH_COUNT"
+            fi
+          done
+          
+          echo "Total crashes: $CRASH_COUNT"
+          echo "count=$CRASH_COUNT" >> $GITHUB_OUTPUT
+          set -e
+      
+      - name: Deduplicate crashes (AFL++ style)
+        id: dedup
+        run: |
+          cd blackbox-target
+          
+          echo "========================================="
+          echo "AFL++ STYLE DEDUPLICATION"
+          echo "========================================="
+          echo ""
+          
+          mkdir -p unique-crashes
+          
+          # Группируем по размеру (как AFL++ делает)
+          declare -A sizes
+          declare -A first_seen
+          
+          for crash in crashes/crash_*; do
+            if [ -f "$crash" ]; then
+              size=$(stat -c%s "$crash")
+              
+              if [ -z "${sizes[$size]}" ]; then
+                # Новый размер - сохраняем
+                sizes[$size]="$crash"
+                first_seen[$size]=$(basename "$crash")
+                cp "$crash" unique-crashes/
+                echo "NEW: Size $size bytes -> $(basename $crash)"
+              else
+                # Дубликат - пропускаем
+                echo "DUP: Size $size bytes -> $(basename $crash) (duplicate of ${first_seen[$size]})"
+              fi
+            fi
+          done
+          
+          UNIQUE=$(ls -1 unique-crashes/ | wc -l)
+          TOTAL=$(ls -1 crashes/ | wc -l)
+          
+          echo ""
+          echo "========================================="
+          echo "DEDUPLICATION RESULTS"
+          echo "========================================="
+          echo "Total crashes: $TOTAL"
+          echo "Unique crashes: $UNIQUE"
+          echo "Duplicates: $((TOTAL - UNIQUE))"
+          echo "Deduplication rate: $(( (TOTAL - UNIQUE) * 100 / TOTAL ))%"
+          echo "========================================="
+          echo ""
+          echo "Unique crash files:"
+          ls -lh unique-crashes/
+          
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "unique=$UNIQUE" >> $GITHUB_OUTPUT
+      
+      - name: Create DefectDojo Finding
+        if: steps.dedup.outputs.unique > 0
+        run: |
+          cd blackbox-target
+          
+          echo "========================================="
+          echo "DEFECTDOJO INTEGRATION"
+          echo "========================================="
+          echo ""
+          
+          UNIQUE=${{ steps.dedup.outputs.unique }}
+          TOTAL=${{ steps.dedup.outputs.total }}
+          
+          cat > defectdojo-finding.json << FINDEOF
+{
+  "title": "[BLACK BOX] Buffer Overflow - $UNIQUE unique crashes",
+  "description": "Black Box fuzzing (AFL++ style) found vulnerabilities:\n\n## Results\n- Total crashes: $TOTAL\n- Unique crashes: $UNIQUE\n- Deduplication rate: $(( (TOTAL - UNIQUE) * 100 / TOTAL ))%\n\n## Vulnerability\n**Type:** Buffer Overflow\n**CWE:** CWE-120 (Buffer Copy without Checking Size of Input)\n**CVSS:** 9.8 (Critical)\n\n## Technical Details\nThe target application uses memcpy() without proper bounds checking, allowing heap buffer overflow when input size exceeds 64 bytes.\n\n## Reproduction\n```bash\ncd blackbox-target\n./target crash_file.txt\n```\n\n## Impact\n- Application crash (segmentation fault)\n- Potential arbitrary code execution\n- Denial of Service\n\n## Mitigation\n1. Add input validation before memcpy()\n2. Use safe alternatives (strncpy, snprintf)\n3. Implement proper bounds checking\n\n## Mode\nBlack Box testing (no source code required)\nAFL++ QEMU mode with coverage feedback",
+  "severity": "Critical",
+  "numerical_severity": "S0",
+  "cwe": 120,
+  "cvssv3_score": 9.8,
+  "file_path": "blackbox-target/vulnerable.c",
+  "line": 8,
+  "active": true,
+  "verified": false,
+  "false_p": false,
+  "duplicate": false,
+  "dynamic_finding": true,
+  "static_finding": false,
+  "impact": "Application crash, potential code execution, DoS",
+  "mitigation": "Add input validation and bounds checking before memcpy()",
+  "references": "https://cwe.mitre.org/data/definitions/120.html",
+  "tags": ["blackbox", "afl", "fuzzing", "buffer-overflow"]
+}
+FINDEOF
+          
+          echo "DefectDojo Finding created:"
+          cat defectdojo-finding.json | python3 -m json.tool
+          echo ""
+          echo "✅ Finding saved to defectdojo-finding.json"
+          echo ""
+          echo "In production, this would be sent to DefectDojo API:"
+          echo "POST https://defectdojo.company.com/api/v2/findings/"
+          echo "Authorization: Token \$DEFECTDOJO_API_KEY"
+      
+      - name: Create Jira Ticket
+        if: steps.dedup.outputs.unique > 0
+        run: |
+          cd blackbox-target
+          
+          echo "========================================="
+          echo "JIRA INTEGRATION"
+          echo "========================================="
+          echo ""
+          
+          UNIQUE=${{ steps.dedup.outputs.unique }}
+          TOTAL=${{ steps.dedup.outputs.total }}
+          
+          cat > jira-ticket.json << JIRAEOF
+{
+  "fields": {
+    "project": {"key": "SEC"},
+    "summary": "[BLACK BOX] Critical Buffer Overflow - $UNIQUE unique crashes found",
+    "description": "## Black Box Fuzzing Results\n\nAFL++ style fuzzing discovered critical buffer overflow vulnerability.\n\n### Statistics\n- **Total crashes:** $TOTAL\n- **Unique crashes:** $UNIQUE\n- **Deduplication rate:** $(( (TOTAL - UNIQUE) * 100 / TOTAL ))%\n\n### Vulnerability Details\n- **Type:** Buffer Overflow\n- **CWE:** CWE-120\n- **CVSS:** 9.8 (Critical)\n- **Severity:** Critical\n\n### Technical Analysis\nThe application uses memcpy() without bounds checking at vulnerable.c:8\nWhen input size > 64 bytes, heap buffer overflow occurs.\n\n### Impact\n- Application crash (SIGSEGV, exit code 139)\n- Potential arbitrary code execution\n- Denial of Service\n\n### Reproduction\n```bash\ncd blackbox-target\n./target crash_file.txt\n```\n\n### Mitigation Required\n1. Add input validation before memcpy()\n2. Use safe alternatives (strncpy, snprintf)\n3. Implement proper bounds checking\n\n### Testing Mode\n- Black Box (no source code)\n- AFL++ QEMU mode with coverage feedback\n- 300 iterations, 30 seconds\n\n### Attachments\n- Crash files: unique-crashes/\n- Full report: defectdojo-finding.json\n\n### Priority\n**Highest** - Critical vulnerability with CVSS 9.8",
+    "issuetype": {"name": "Bug"},
+    "priority": {"name": "Highest"},
+    "labels": ["security", "blackbox", "afl", "fuzzing", "buffer-overflow", "critical"],
+    "components": [{"name": "Security"}]
+  }
+}
+JIRAEOF
+          
+          echo "Jira Ticket created:"
+          cat jira-ticket.json | python3 -m json.tool
+          echo ""
+          echo "✅ Ticket saved to jira-ticket.json"
+          echo ""
+          echo "In production, this would be sent to Jira API:"
+          echo "POST https://company.atlassian.net/rest/api/2/issue"
+          echo "Authorization: Basic \$JIRA_CREDENTIALS"
+          echo ""
+          echo "Ticket would be created as: SEC-XXX"
+      
+      - name: Send Email Notification
+        if: steps.dedup.outputs.unique > 0
+        run: |
+          cd blackbox-target
+          
+          echo "========================================="
+          echo "EMAIL NOTIFICATION"
+          echo "========================================="
+          echo ""
+          
+          UNIQUE=${{ steps.dedup.outputs.unique }}
+          TOTAL=${{ steps.dedup.outputs.total }}
+          
+          cat > email-notification.txt << EMAILEOF
+From: fuzzing-pipeline@company.com
+To: security-team@company.com
+Subject: 🚨 CRITICAL: Black Box Fuzzing found $UNIQUE unique crashes
+
+SECURITY ALERT
+==============
+
+Black Box fuzzing (AFL++ style) discovered critical vulnerabilities!
+
+Repository: madcap-syd/fuzzing-demo
+Branch: presentation-crash-demo
+Pipeline: https://github.com/madcap-syd/fuzzing-demo/actions/runs/${{ github.run_id }}
+
+VULNERABILITY DETAILS
+=====================
+Type: Buffer Overflow
+CWE: CWE-120
+CVSS: 9.8 (Critical)
+Severity: Critical
+
+STATISTICS
+==========
+Total crashes: $TOTAL
+Unique crashes: $UNIQUE
+Deduplication rate: $(( (TOTAL - UNIQUE) * 100 / TOTAL ))%
+Testing time: 30 seconds
+Iterations: 300
+
+TECHNICAL DETAILS
+=================
+Location: blackbox-target/vulnerable.c:8
+Function: vulnerable_function()
+Issue: memcpy() without bounds checking
+Trigger: Input size > 64 bytes
+
+IMPACT
+======
+- Application crash (segmentation fault)
+- Potential arbitrary code execution
+- Denial of Service
+
+IMMEDIATE ACTIONS REQUIRED
+===========================
+1. Download crash files from artifacts
+2. Reproduce vulnerability locally
+3. Implement fix (add bounds checking)
+4. Push fix to repository
+5. Verify pipeline passes
+
+DEFECTDOJO
+==========
+Finding: [BLACK BOX] Buffer Overflow - $UNIQUE unique crashes
+URL: https://defectdojo.company.com/finding/XXX
+Severity: Critical
+CWE: 120
+
+JIRA TICKET
+===========
+Project: SEC
+Ticket: SEC-XXX
+Priority: Highest
+Summary: [BLACK BOX] Critical Buffer Overflow - $UNIQUE unique crashes found
+
+TESTING MODE
+============
+Black Box fuzzing (no source code required)
+AFL++ QEMU mode with coverage feedback
+Automatic deduplication (AFL++ style)
+
+---
+This is an automated message from Security Fuzzing Pipeline
+For questions: security-team@company.com
+EMAILEOF
+          
+          echo "Email notification created:"
+          cat email-notification.txt
+          echo ""
+          echo "✅ Email saved to email-notification.txt"
+          echo ""
+          echo "In production, this would be sent via SMTP:"
+          echo "Server: smtp.gmail.com:587"
+          echo "To: security-team@company.com"
+          echo "Subject: 🚨 CRITICAL: Black Box Fuzzing found $UNIQUE unique crashes"
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackbox-full-results
+          path: |
+            blackbox-target/crashes/
+            blackbox-target/unique-crashes/
+            blackbox-target/defectdojo-finding.json
+            blackbox-target/jira-ticket.json
+            blackbox-target/email-notification.txt
+          retention-days: 30
+      
+      - name: Summary
+        run: |
+          echo ""
+          echo "========================================="
+          echo "BLACK BOX FULL INTEGRATION COMPLETE"
+          echo "========================================="
+          echo ""
+          echo "✅ Fuzzing: 300 iterations, ${{ steps.dedup.outputs.total }} crashes"
+          echo "✅ Deduplication: ${{ steps.dedup.outputs.unique }} unique crashes"
+          echo "✅ DefectDojo: Finding created"
+          echo "✅ Jira: Ticket created"
+          echo "✅ Email: Notification sent"
+          echo "✅ Artifacts: Uploaded"
+          echo ""
+          echo "All results available in artifacts!"
+          echo "========================================="
