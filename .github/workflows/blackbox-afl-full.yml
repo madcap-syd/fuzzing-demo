@@ -1,0 +1,217 @@
+name: Black Box AFL++ Full Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  afl-blackbox:
+    name: AFL++ Black Box (QEMU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install AFL++ and dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y afl++ qemu-user gcc make
+          echo "AFL++ installed"
+      
+      - name: Build target binary
+        run: |
+          cd blackbox-target
+          gcc -O2 -fno-stack-protector -z execstack -o target vulnerable.c
+          chmod +x target
+          file target
+      
+      - name: Create corpus
+        run: |
+          mkdir -p corpus crashes
+          echo "test" > corpus/input1.txt
+          echo "AAAA" > corpus/input2.txt
+          echo "CRASH" > corpus/input3.txt
+          echo "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" > corpus/input4.txt
+      
+      - name: Run AFL++ (QEMU Mode - 5 min)
+        run: |
+          echo "Starting AFL++ in QEMU mode..."
+          timeout 300 afl-fuzz -Q -i corpus -o crashes -t 5000 -- blackbox-target/target @@ || true
+          echo "AFL++ completed"
+      
+      - name: Check crashes
+        id: check
+        run: |
+          if [ -d "crashes/default/crashes" ]; then
+            CRASH_COUNT=$(ls -1 crashes/default/crashes/ 2>/dev/null | wc -l)
+            echo "Crashes found: $CRASH_COUNT"
+            echo "has_crashes=true" >> $GITHUB_OUTPUT
+          else
+            echo "No crashes found"
+            echo "has_crashes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Analyze and deduplicate crashes
+        if: steps.check.outputs.has_crashes == 'true'
+        run: |
+          echo "Analyzing crashes..."
+          mkdir -p unique-crashes
+          
+          # Считываем все краши
+          CRASH_DIR="crashes/default/crashes"
+          UNIQUE_DIR="unique-crashes"
+          
+          # Группируем по размеру (простая дедупликация)
+          declare -A sizes
+          for crash in $CRASH_DIR/*; do
+            if [ -f "$crash" ]; then
+              size=$(stat -c%s "$crash")
+              if [ -z "${sizes[$size]}" ]; then
+                sizes[$size]="$crash"
+                cp "$crash" "$UNIQUE_DIR/"
+              fi
+            fi
+          done
+          
+          UNIQUE_COUNT=$(ls -1 $UNIQUE_DIR/ 2>/dev/null | wc -l)
+          echo "Unique crashes: $UNIQUE_COUNT"
+          echo "unique_count=$UNIQUE_COUNT" >> $GITHUB_OUTPUT
+      
+      - name: Generate report
+        if: steps.check.outputs.has_crashes == 'true'
+        run: |
+          echo "=== AFL++ BLACK BOX REPORT ===" > afl-report.txt
+          echo "Date: $(date)" >> afl-report.txt
+          echo "Mode: QEMU (Black Box)" >> afl-report.txt
+          echo "Target: blackbox-target/target" >> afl-report.txt
+          echo "" >> afl-report.txt
+          echo "Vulnerabilities:" >> afl-report.txt
+          echo "  1. Buffer Overflow (CWE-120)" >> afl-report.txt
+          echo "  2. Null Pointer Dereference (CWE-476)" >> afl-report.txt
+          echo "" >> afl-report.txt
+          
+          if [ -d "crashes/default/crashes" ]; then
+            TOTAL=$(ls -1 crashes/default/crashes/ | wc -l)
+            UNIQUE=$(ls -1 unique-crashes/ 2>/dev/null | wc -l)
+            echo "Total crashes: $TOTAL" >> afl-report.txt
+            echo "Unique crashes: $UNIQUE" >> afl-report.txt
+            echo "" >> afl-report.txt
+            echo "Crash files:" >> afl-report.txt
+            ls -lh unique-crashes/ >> afl-report.txt
+          fi
+          
+          cat afl-report.txt
+      
+      - name: Upload to DefectDojo
+        if: steps.check.outputs.has_crashes == 'true'
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+          DEMO_MODE: true
+        run: |
+          echo "Creating DefectDojo finding..."
+          
+          UNIQUE_COUNT=${{ steps.check.outputs.unique_count }}
+          
+          cat > blackbox-finding.json << FINDEOF
+{
+  "title": "[BLACK BOX] Buffer Overflow & Null Pointer Dereference",
+  "description": "AFL++ Black Box fuzzing found $UNIQUE_COUNT unique crashes\n\nVulnerabilities:\n1. Buffer Overflow (CWE-120)\n2. Null Pointer Dereference (CWE-476)\n\nMode: QEMU (no source code)\nTarget: blackbox-target/target",
+  "severity": "Critical",
+  "numerical_severity": "S0",
+  "cwe": 120,
+  "cvssv3_score": 9.8,
+  "file_path": "blackbox-target/target",
+  "line": 0,
+  "active": true,
+  "verified": false,
+  "false_p": false,
+  "duplicate": false,
+  "dynamic_finding": true,
+  "static_finding": false,
+  "impact": "Application crash, potential code execution",
+  "mitigation": "Add input validation and bounds checking",
+  "references": "https://cwe.mitre.org/data/definitions/120.html"
+}
+FINDEOF
+          
+          cat blackbox-finding.json | python3 -m json.tool
+          echo "Finding saved to blackbox-finding.json"
+      
+      - name: Create Jira ticket
+        if: steps.check.outputs.has_crashes == 'true'
+        run: |
+          echo "Creating Jira ticket..."
+          
+          UNIQUE_COUNT=${{ steps.check.outputs.unique_count }}
+          
+          cat > blackbox-jira.json << JIRAEOF
+{
+  "fields": {
+    "project": {"key": "SEC"},
+    "summary": "[BLACK BOX] AFL++ found $UNIQUE_COUNT unique crashes",
+    "description": "AFL++ Black Box fuzzing (QEMU mode) found vulnerabilities:\n\n1. Buffer Overflow (CWE-120)\n2. Null Pointer Dereference (CWE-476)\n\nTotal crashes: ${{ steps.check.outputs.crash_count }}\nUnique crashes: $UNIQUE_COUNT\n\nMode: Black Box (no source code)\nTarget: blackbox-target/target",
+    "issuetype": {"name": "Bug"},
+    "priority": {"name": "Highest"},
+    "labels": ["security", "blackbox", "afl", "fuzzing"]
+  }
+}
+JIRAEOF
+          
+          cat blackbox-jira.json | python3 -m json.tool
+          echo "Jira ticket saved to blackbox-jira.json"
+      
+      - name: Send email notification
+        if: steps.check.outputs.has_crashes == 'true'
+        continue-on-error: true
+        run: |
+          echo "Sending email notification..."
+          
+          cat > blackbox-email.txt << EMAILEOF
+From: fuzzing-pipeline@company.com
+To: security-team@company.com
+Subject:  Black Box Fuzzing: AFL++ found crashes
+
+AFL++ Black Box fuzzing found vulnerabilities!
+
+Repository: madcap-syd/fuzzing-demo
+Mode: QEMU (Black Box)
+Target: blackbox-target/target
+
+Results:
+- Total crashes: ${{ steps.check.outputs.crash_count }}
+- Unique crashes: ${{ steps.check.outputs.unique_count }}
+
+Vulnerabilities:
+1. Buffer Overflow (CWE-120)
+2. Null Pointer Dereference (CWE-476)
+
+Pipeline: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Actions required:
+1. Download artifacts
+2. Analyze crashes
+3. Fix vulnerabilities
+4. Push fix
+
+---
+Automated message from AFL++ Pipeline
+EMAILEOF
+          
+          cat blackbox-email.txt
+          echo "Email saved to blackbox-email.txt"
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: afl-blackbox-results
+          path: |
+            crashes/
+            unique-crashes/
+            afl-report.txt
+            blackbox-finding.json
+            blackbox-jira.json
+            blackbox-email.txt
+          retention-days: 30
