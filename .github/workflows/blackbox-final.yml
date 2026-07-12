@@ -1,0 +1,79 @@
+name: Black Box Final - WORKING
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  blackbox:
+    name: Black Box Fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build target
+        run: |
+          mkdir -p blackbox-target/corpus blackbox-target/crashes
+          cd blackbox-target
+          gcc -O2 -fno-stack-protector -z execstack -o target vulnerable.c
+          chmod +x target
+          echo "Target built"
+      
+      - name: Create corpus
+        run: |
+          cd blackbox-target
+          echo "test" > corpus/input1.txt
+          echo "AAAA" > corpus/input2.txt
+          echo "CRASH" > corpus/crash_trigger.txt
+          python3 -c "print('A' * 200)" > corpus/large.txt
+          echo "Corpus created:"
+          ls -lh corpus/
+      
+      - name: Run Black Box Fuzzing
+        id: fuzz
+        run: |
+          cd blackbox-target
+          CRASH_COUNT=0
+          
+          echo "Starting Black Box Fuzzing..."
+          
+          for i in $(seq 1 300); do
+            SEED=$(ls corpus | shuf -n 1)
+            cp corpus/$SEED /tmp/mutated.txt
+            dd if=/dev/urandom bs=1 count=$((RANDOM % 100)) >> /tmp/mutated.txt 2>/dev/null
+            
+            timeout 1s ./target /tmp/mutated.txt > /dev/null 2>&1
+            EXIT_CODE=$?
+            
+            if [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 136 ]; then
+              CRASH_COUNT=$((CRASH_COUNT + 1))
+              echo "CRASH #$CRASH_COUNT (iter $i, exit $EXIT_CODE)"
+              cp /tmp/mutated.txt crashes/crash_$(printf "%03d" $CRASH_COUNT).txt
+            fi
+            
+            if [ $((i % 50)) -eq 0 ]; then
+              echo "Progress: $i/300 | Crashes: $CRASH_COUNT"
+            fi
+          done
+          
+          echo "Total crashes: $CRASH_COUNT"
+          echo "count=$CRASH_COUNT" >> $GITHUB_OUTPUT
+      
+      - name: Show results
+        run: |
+          cd blackbox-target
+          echo ""
+          echo "RESULTS:"
+          ls -lh crashes/ | head -10
+          echo "Total: $(ls -1 crashes/ | wc -l) crashes"
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackbox-crashes
+          path: |
+            blackbox-target/crashes/
+            blackbox-target/corpus/
