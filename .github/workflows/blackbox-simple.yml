@@ -8,7 +8,7 @@ on:
 
 jobs:
   blackbox-fuzz:
-    name: Black Box Fuzzing (300 iterations)
+    name: Black Box Fuzzing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,6 @@ jobs:
           cd blackbox-target
           gcc -O2 -fno-stack-protector -z execstack -o target vulnerable.c
           chmod +x target
-          file target
       
       - name: Create corpus
         run: |
@@ -29,70 +28,36 @@ jobs:
           echo "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" > corpus/input4.txt
       
       - name: Run Black Box Fuzzing
+        id: fuzz
         run: |
-          echo "Starting Black Box Fuzzing..."
           cd blackbox-target
-          
           CRASH_COUNT=0
           
           for i in {1..300}; do
-            # Берём случайный input
             SEED=$(ls ../corpus | shuf -n 1)
-            
-            # Мутируем (добавляем случайные байты)
             cp ../corpus/$SEED /tmp/mutated.txt
             dd if=/dev/urandom bs=1 count=$((RANDOM % 200 + 10)) >> /tmp/mutated.txt 2>/dev/null
             
-            # Запускаем target
             timeout 1s ./target /tmp/mutated.txt > /dev/null 2>&1
             EXIT_CODE=$?
             
-            # Проверяем на краш (134=abort, 139=segfault, 136=illegal instruction)
             if [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 136 ]; then
               CRASH_COUNT=$((CRASH_COUNT + 1))
-              echo "CRASH #$CRASH_COUNT! Exit code: $EXIT_CODE (iteration $i)"
+              echo "CRASH #$CRASH_COUNT (iteration $i)"
               cp /tmp/mutated.txt crashes/crash_$(printf "%03d" $CRASH_COUNT).txt
-            fi
-            
-            if [ $((i % 50)) -eq 0 ]; then
-              echo "Progress: $i/300 | Crashes: $CRASH_COUNT"
             fi
           done
           
-          echo ""
-          echo "Fuzzing completed!"
-          echo "Total iterations: 300"
-          echo "Crashes found: $CRASH_COUNT"
-          
-          echo "CRASH_COUNT=$CRASH_COUNT" >> $GITHUB_OUTPUT
-      
-      - name: Check crashes
-        id: check
-        run: |
-          cd blackbox-target
-          if [ "$(ls -A ./crashes/ 2>/dev/null)" ]; then
-            echo "Crashes found!"
-            ls -lh ./crashes/ | head -20
-            echo "has_crashes=true" >> $GITHUB_OUTPUT
-          else
-            echo "No crashes found"
-            echo "has_crashes=false" >> $GITHUB_OUTPUT
-          fi
+          echo "Total crashes: $CRASH_COUNT"
+          echo "count=$CRASH_COUNT" >> $GITHUB_OUTPUT
       
       - name: Analyze crashes
-        if: steps.check.outputs.has_crashes == 'true'
+        if: steps.fuzz.outputs.count > 0
         run: |
           cd blackbox-target
-          
-          echo "Analyzing crashes..."
-          
-          # Считаем количество
-          TOTAL=$(ls -1 crashes/ | wc -l)
-          
-          # Группируем по размеру (дедупликация)
           mkdir -p unique
-          declare -A sizes
           
+          declare -A sizes
           for crash in crashes/*; do
             if [ -f "$crash" ]; then
               size=$(stat -c%s "$crash")
@@ -104,126 +69,20 @@ jobs:
           done
           
           UNIQUE=$(ls -1 unique/ | wc -l)
-          
-          echo "Total crashes: $TOTAL"
           echo "Unique crashes: $UNIQUE"
-          
-          echo "TOTAL=$TOTAL" >> $GITHUB_OUTPUT
-          echo "UNIQUE=$UNIQUE" >> $GITHUB_OUTPUT
+          echo "unique=$UNIQUE" >> $GITHUB_OUTPUT
       
       - name: Generate report
-        if: steps.check.outputs.has_crashes == 'true'
+        if: steps.fuzz.outputs.count > 0
         run: |
           cd blackbox-target
-          
-          echo "=== BLACK BOX FUZZING REPORT ===" > report.txt
+          echo "BLACK BOX FUZZING REPORT" > report.txt
+          echo "========================" >> report.txt
           echo "Date: $(date)" >> report.txt
-          echo "Mode: Black Box (no instrumentation)" >> report.txt
-          echo "Target: vulnerable.c" >> report.txt
-          echo "" >> report.txt
-          echo "Vulnerabilities:" >> report.txt
-          echo "  1. Buffer Overflow (CWE-120)" >> report.txt
-          echo "" >> report.txt
-          echo "Results:" >> report.txt
-          echo "  Total crashes: ${{ steps.check.outputs.TOTAL }}" >> report.txt
-          echo "  Unique crashes: ${{ steps.check.outputs.UNIQUE }}" >> report.txt
-          echo "" >> report.txt
-          echo "Unique crash files:" >> report.txt
-          ls -lh unique/ >> report.txt
-          
+          echo "Total crashes: ${{ steps.fuzz.outputs.count }}" >> report.txt
+          echo "Unique crashes: ${{ steps.fuzz.outputs.unique }}" >> report.txt
+          echo "Vulnerability: Buffer Overflow (CWE-120)" >> report.txt
           cat report.txt
-      
-      - name: Create DefectDojo finding
-        if: steps.check.outputs.has_crashes == 'true'
-        run: |
-          cd blackbox-target
-          
-          UNIQUE=${{ steps.check.outputs.UNIQUE }}
-          
-          cat > finding.json << FINDEOF
-{
-  "title": "[BLACK BOX] Buffer Overflow",
-  "description": "Black Box fuzzing found $UNIQUE unique crashes\n\nVulnerability: Buffer Overflow (CWE-120)\n\nMode: Black Box (no source code)\nTarget: vulnerable.c\n\nCrashes demonstrate heap corruption due to unchecked strcpy()",
-  "severity": "Critical",
-  "numerical_severity": "S0",
-  "cwe": 120,
-  "cvssv3_score": 9.8,
-  "file_path": "blackbox-target/vulnerable.c",
-  "line": 8,
-  "active": true,
-  "verified": false,
-  "false_p": false,
-  "duplicate": false,
-  "dynamic_finding": true,
-  "static_finding": false,
-  "impact": "Application crash, potential code execution",
-  "mitigation": "Use strncpy instead of strcpy. Add input validation."
-}
-FINDEOF
-          
-          cat finding.json | python3 -m json.tool
-      
-      - name: Create Jira ticket
-        if: steps.check.outputs.has_crashes == 'true'
-        run: |
-          cd blackbox-target
-          
-          UNIQUE=${{ steps.check.outputs.UNIQUE }}
-          TOTAL=${{ steps.check.outputs.TOTAL }}
-          
-          cat > jira.json << JIRAEOF
-{
-  "fields": {
-    "project": {"key": "SEC"},
-    "summary": "[BLACK BOX] Buffer Overflow - $UNIQUE unique crashes",
-    "description": "Black Box fuzzing found vulnerabilities:\n\nBuffer Overflow (CWE-120)\n\nResults:\n- Total crashes: $TOTAL\n- Unique crashes: $UNIQUE\n\nMode: Black Box (no source code)\nTarget: vulnerable.c",
-    "issuetype": {"name": "Bug"},
-    "priority": {"name": "Highest"},
-    "labels": ["security", "blackbox", "fuzzing", "buffer-overflow"]
-  }
-}
-JIRAEOF
-          
-          cat jira.json | python3 -m json.tool
-      
-      - name: Send email
-        if: steps.check.outputs.has_crashes == 'true'
-        continue-on-error: true
-        run: |
-          cd blackbox-target
-          
-          UNIQUE=${{ steps.check.outputs.UNIQUE }}
-          
-          cat > email.txt << EMAILEOF
-From: fuzzing-pipeline@company.com
-To: security-team@company.com
-Subject:  Black Box Fuzzing: $UNIQUE unique crashes found
-
-Black Box fuzzing found vulnerabilities!
-
-Repository: madcap-syd/fuzzing-demo
-Mode: Black Box (no instrumentation)
-Target: vulnerable.c
-
-Results:
-- Total crashes: ${{ steps.check.outputs.TOTAL }}
-- Unique crashes: $UNIQUE
-
-Vulnerability: Buffer Overflow (CWE-120)
-
-Pipeline: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-Actions:
-1. Download artifacts
-2. Analyze crashes
-3. Fix vulnerability
-4. Push fix
-
----
-Automated message from Black Box Pipeline
-EMAILEOF
-          
-          cat email.txt
       
       - name: Upload artifacts
         if: always()
@@ -234,7 +93,3 @@ EMAILEOF
             blackbox-target/crashes/
             blackbox-target/unique/
             blackbox-target/report.txt
-            blackbox-target/finding.json
-            blackbox-target/jira.json
-            blackbox-target/email.txt
-          retention-days: 30

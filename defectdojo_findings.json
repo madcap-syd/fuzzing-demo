@@ -1,6 +1,6 @@
 {
   "title": "[FUZZING] Null Pointer Dereference",
-  "description": "## Vulnerability Found\n\n**Type:** Null Pointer Dereference\n**Severity:** Critical\n**CWE:** 476\n**CVSS:** 9.8\n**Date:** 2026-07-11T17:03:50.062008\n\n### Stack Trace\n```\n#0 0x561668919fd5 in vulnerable_function(unsigned char const*, unsigned long) /build/harness.cpp:10:18\n#1 0x561668919fd5 in LLVMFuzzerTestOneInput /build/harness.cpp:16:5\n#10 0x561668824964 in _start (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)\n```\n\n### Crash File\n- Name: crash-c8ec8f720f3035481b144fc7de253c7f2978a09e\n- Size: 5 bytes\n- Hex: 46555a5a0a\n\n### Reproduction\n```bash\n./fuzz_target crash-c8ec8f720f3035481b144fc7de253c7f2978a09e\n```",
+  "description": "## Vulnerability Found\n\n**Type:** Null Pointer Dereference\n**Severity:** Critical\n**CWE:** 476\n**CVSS:** 9.8\n**Date:** 2026-07-12T13:13:52.906799\n\n### Stack Trace\n```\n#0 0x561668919fd5 in vulnerable_function(unsigned char const*, unsigned long) /build/harness.cpp:10:18\n#1 0x561668919fd5 in LLVMFuzzerTestOneInput /build/harness.cpp:16:5\n#10 0x561668824964 in _start (/fuzz/fuzz_target+0x23964) (BuildId: ca3752de7adc78783afc474acd2b2aedab82485c)\n```\n\n### Crash File\n- Name: crash-c8ec8f720f3035481b144fc7de253c7f2978a09e\n- Size: 5 bytes\n- Hex: 46555a5a0a\n\n### Reproduction\n```bash\n./fuzz_target crash-c8ec8f720f3035481b144fc7de253c7f2978a09e\n```",
   "severity": "Critical",
   "numerical_severity": "S0",
   "cwe": 476,
