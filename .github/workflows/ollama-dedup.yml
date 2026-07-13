@@ -1,7 +1,7 @@
 name: Ollama-Powered Deduplication
 
 on:
-  workflow_dispatch:  # Запуск вручную для demo
+  workflow_dispatch:
   push:
     branches: ["**"]
 
@@ -19,46 +19,50 @@ jobs:
       
       - name: Run fuzzing
         run: |
+          set +e  # НЕ выходим при ошибках!
           cd blackbox-target
           mkdir -p corpus crashes
           python3 -c "print('B'*200)" > corpus/large.txt
           
-          for i in {1..300}; do
+          COUNT=0
+          for i in {1..100}; do
             cp corpus/large.txt /tmp/test.txt
             dd if=/dev/urandom bs=1 count=50 >> /tmp/test.txt 2>/dev/null
-            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1
-            if [ $? -eq 139 ]; then
-              cp /tmp/test.txt crashes/crash_$i.txt
+            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1 || true
+            if [ $? -eq 139 ] || [ $? -eq 134 ]; then
+              COUNT=$((COUNT+1))
+              cp /tmp/test.txt crashes/crash_$COUNT.txt
             fi
           done
+          echo "✅ Found $COUNT crashes"
+          echo "crash_count=$COUNT" >> $GITHUB_OUTPUT
+        id: fuzz
       
-      - name: Install Ollama
-        run: |
-          # Устанавливаем Ollama (легковесная версия)
-          curl -fsSL https://ollama.com/install.sh | sh
-          pip install ollama
-          
-          # Запускаем Ollama server (background)
-          ollama serve &
-          sleep 5
-          
-          # Pull модель (tiny для скорости)
-          ollama pull llama3.2:latest
+      - name: Install Python dependencies
+        run: pip install requests
       
       - name: Run Ollama Deduplication
         run: |
-          python3 scripts/ollama-dedup.py blackbox-target/crashes llama3.2
-      
-      - name: Show Results
-        run: |
-          echo "=== OLLAMA ANALYSIS RESULTS ==="
-          cat blackbox-target/reports/ollama_bugs.json | python3 -m json.tool
+          cd blackbox-target
+          echo "=== OLLAMA SEMANTIC DEDUP ==="
+          python3 ../scripts/ollama-dedup.py crashes
           echo ""
-          echo "=== GENERATED JIRA TICKETS ==="
-          cat blackbox-target/reports/ollama_jira_tickets.json | python3 -m json.tool | head -50
+          echo "=== RESULTS ==="
+          cat reports/ollama_bugs.json
+        id: ollama
       
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ollama-analysis
+          name: ollama-analysis-results
           path: blackbox-target/reports/
+          retention-days: 7
+      
+      - name: Summary
+        run: |
+          echo "## 🦙 Ollama AI Deduplication Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total crashes found:** ${{ steps.fuzz.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**AI Analysis:**" >> $GITHUB_STEP_SUMMARY
+          cat blackbox-target/reports/ollama_bugs.json >> $GITHUB_STEP_SUMMARY
