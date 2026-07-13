@@ -1,0 +1,57 @@
+name: 02-BlackBox-Fuzzing (AFL++)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  blackbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install AFL++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y afl++ qemu-user
+      
+      - name: Fix core_pattern
+        run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
+      
+      - name: Build Target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+      
+      - name: Create Corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus
+          python3 -c "print('B'*200)" > corpus/seed.txt
+      
+      - name: Run AFL++ (90 sec)
+        run: |
+          set +e
+          cd blackbox-target
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+          timeout 90s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+      
+      - name: Show Results
+        run: |
+          cd blackbox-target
+          if [ -d "afl_out/default/crashes" ]; then
+            COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+            echo "🎯 FOUND $COUNT CRASHES!"
+            ls -lh afl_out/default/crashes/
+            
+            echo "## 🎯 AFL++ Found $COUNT Crashes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            ls -lh afl_out/default/crashes/ >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No crashes found"
+            echo "## ⚠️ No crashes in this run" >> $GITHUB_STEP_SUMMARY
+          fi
+        id: results
