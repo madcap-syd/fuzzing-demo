@@ -1,4 +1,4 @@
-name: 02-BlackBox-Fuzzing (AFL++)
+name: 02-BlackBox-Fuzzing (AFL++ Real)
 
 on:
   push:
@@ -11,47 +11,97 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install AFL++
+      - name: Install AFL++ from source (with QEMU)
         run: |
+          echo " Installing AFL++ with QEMU mode..."
           sudo apt-get update
-          sudo apt-get install -y afl++ qemu-user
+          sudo apt-get install -y git make gcc clang llvm python3 wget
+          
+          # Клонируем AFL++
+          cd /tmp
+          git clone https://github.com/AFLplusplus/AFLplusplus.git
+          cd AFLplusplus
+          
+          # Собираем AFL++
+          make distrib -j$(nproc)
+          sudo make install
+          
+          # Собираем QEMU модуль
+          cd qemu_mode
+          ./build_qemu_support.sh
+          
+          echo "✅ AFL++ installed with QEMU support"
+          afl-fuzz --version
       
       - name: Fix core_pattern
-        run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
+        run: |
+          echo "core" | sudo tee /proc/sys/kernel/core_pattern
+          cat /proc/sys/kernel/core_pattern
       
       - name: Build Target
         run: |
           cd blackbox-target
           gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          file target
       
       - name: Create Corpus
         run: |
           cd blackbox-target
           mkdir -p corpus
           python3 -c "print('B'*200)" > corpus/seed.txt
+          ls -lh corpus/
       
-      - name: Run AFL++ (90 sec)
+      - name: Run AFL++ (120 sec)
         run: |
           set +e
           cd blackbox-target
+          
+          echo " Starting AFL++ in QEMU mode for 2 minutes..."
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
-          timeout 90s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          export AFL_SKIP_CPUFREQ=1
+          
+          timeout 120s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          
+          echo "✅ AFL++ run finished"
       
       - name: Show Results
         run: |
           cd blackbox-target
+          
+          echo ""
+          echo "=== AFL++ RESULTS ==="
+          ls -la afl_out/ 2>/dev/null || echo "No output directory"
+          
           if [ -d "afl_out/default/crashes" ]; then
             COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
-            echo "🎯 FOUND $COUNT CRASHES!"
-            ls -lh afl_out/default/crashes/
             
-            echo "## 🎯 AFL++ Found $COUNT Crashes" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            ls -lh afl_out/default/crashes/ >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            if [ "$COUNT" -gt 0 ]; then
+              echo ""
+              echo "🎯 SUCCESS: Found $COUNT crashes!"
+              echo ""
+              echo "Crash files:"
+              ls -lh afl_out/default/crashes/
+              
+              echo ""
+              echo "## 🎯 AFL++ Found $COUNT Crashes" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              ls -lh afl_out/default/crashes/ >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ No crashes found"
+              echo "## ⚠️ AFL++ found 0 crashes" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "No crashes found"
-            echo "## ⚠️ No crashes in this run" >> $GITHUB_STEP_SUMMARY
+            echo "No crashes directory"
+            echo "## ⚠️ No crashes directory created" >> $GITHUB_STEP_SUMMARY
           fi
         id: results
+      
+      - name: Upload Artifacts
+        if: steps.results.outputs.crash_count > 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: aflpp-crashes
+          path: blackbox-target/afl_out/default/crashes/
+          retention-days: 7
