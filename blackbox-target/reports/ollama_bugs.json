@@ -1,0 +1,12 @@
+[
+  {
+    "bug_id": "BUG-1",
+    "vuln_type": "Heap Buffer Overflow",
+    "cwe": 122,
+    "cvss": 9.8,
+    "severity": "Critical",
+    "crash_count": 58,
+    "description": "AI Analysis (Ollama): Found 58 crashes triggering Heap Buffer Overflow. Inputs are semantically grouped as the same root cause.",
+    "analysis_source": "ollama-llama3.2"
+  }
+]
