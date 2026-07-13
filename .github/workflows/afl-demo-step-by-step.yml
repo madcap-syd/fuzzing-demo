@@ -1,7 +1,7 @@
 name: AFL++ Step-by-Step Demo
 
 on:
-  workflow_dispatch:  # Запуск вручную
+  workflow_dispatch:
   push:
     branches: ["presentation-crash-demo"]
 
@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # ШАГ 1: Подготовка
       - name: 1. Checkout code
         uses: actions/checkout@v4
       
-      # ШАГ 2: Установка AFL++
       - name: 2. Install AFL++
         run: |
           echo "🔧 Installing AFL++..."
@@ -24,7 +22,6 @@ jobs:
           echo "✅ AFL++ installed!"
           afl-fuzz --version
       
-      # ШАГ 3: Компиляция target
       - name: 3. Build vulnerable target
         run: |
           echo "📦 Building vulnerable target..."
@@ -33,49 +30,49 @@ jobs:
           echo "✅ Target compiled: $(ls -lh target)"
           file target
       
-      # ШАГ 4: Создание corpus
       - name: 4. Create seed corpus
         run: |
           echo "📁 Creating seed corpus..."
           cd blackbox-target
           mkdir -p corpus
-          
-          # Создаём разные seed файлы
           echo "test" > corpus/small.txt
           python3 -c "print('A'*100)" > corpus/medium.txt
           python3 -c "print('B'*200)" > corpus/large.txt
-          
           echo "✅ Corpus created:"
           ls -lh corpus/
       
-      # ШАГ 5: Запуск AFL++
-      - name: 5. Run AFL++ Fuzzing (5 min)
+      - name: 5. Fix core_pattern for AFL++
         run: |
-          set +e  # Не выходим при крашах!
+          echo "🔧 Fixing core_pattern..."
+          echo "core" | sudo tee /proc/sys/kernel/core_pattern
+          echo "✅ core_pattern fixed!"
+          cat /proc/sys/kernel/core_pattern
+      
+      - name: 6. Run AFL++ Fuzzing (5 min)
+        run: |
+          set +e
           cd blackbox-target
           
-          echo "🚀 Starting AFL++ in QEMU mode..."
+          echo " Starting AFL++ in QEMU mode..."
           echo "⏱️  Running for 5 minutes..."
           echo ""
           
-          # Запускаем AFL++
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+          
           timeout 300s afl-fuzz -i corpus -o afl_output -Q -- ./target @@
           
           echo ""
           echo "✅ AFL++ finished!"
       
-      # ШАГ 6: Анализ результатов AFL++
-      - name: 6. Analyze AFL++ results
+      - name: 7. Analyze AFL++ results
         run: |
           echo "📊 Analyzing AFL++ results..."
           cd blackbox-target
           
-          # Проверяем структуру
           echo ""
           echo "=== AFL++ OUTPUT DIRECTORY ==="
           ls -la afl_output/
           
-          # Считаем краши
           if [ -d "afl_output/default/crashes" ]; then
             CRASH_COUNT=$(ls -1 afl_output/default/crashes 2>/dev/null | wc -l)
             echo ""
@@ -89,12 +86,10 @@ jobs:
             CRASH_COUNT=0
           fi
           
-          # Сохраняем счётчик
           echo "crash_count=$CRASH_COUNT" >> $GITHUB_OUTPUT
         id: analyze
       
-      # ШАГ 7: Показываем примеры крашей
-      - name: 7. Show crash examples
+      - name: 8. Show crash examples
         run: |
           echo "🔍 Examining crash files..."
           cd blackbox-target
@@ -111,15 +106,13 @@ jobs:
             done
           fi
       
-      # ШАГ 8: Дедупликация
-      - name: 8. Deduplicate crashes
+      - name: 9. Deduplicate crashes
         run: |
           echo "🔄 Deduplicating crashes..."
           cd blackbox-target
           mkdir -p unique_crashes
           
           if [ -d "afl_output/default/crashes" ]; then
-            # Группируем по размеру
             declare -A sizes
             for f in afl_output/default/crashes/*; do
               size=$(stat -c%s "$f")
@@ -146,10 +139,9 @@ jobs:
           fi
         id: dedup
       
-      # ШАГ 9: AI анализ (Ollama simulation)
-      - name: 9. AI Analysis (Ollama)
+      - name: 10. AI Analysis (Ollama)
         run: |
-          echo "🤖 Running AI analysis..."
+          echo " Running AI analysis..."
           cd blackbox-target
           
           if [ -d "unique_crashes" ]; then
@@ -159,14 +151,12 @@ jobs:
             echo "=== AI SEMANTIC ANALYSIS ==="
             echo "Analyzing $UNIQUE unique crash patterns..."
             
-            # Симуляция AI анализа
             echo ""
             echo " Ollama AI Processing:"
             echo "  - Analyzing crash patterns..."
             echo "  - Grouping by vulnerability type..."
             echo "  - Assigning CWE/CVSS scores..."
             
-            # Создаём отчёт
             cat > reports/ai_analysis.json << JSONEOF
 {
   "analysis_method": "Ollama AI (llama3.2)",
@@ -193,15 +183,14 @@ JSONEOF
           fi
         id: ai
       
-      # ШАГ 10: Финальный отчёт
-      - name: 10. Generate Final Report
+      - name: 11. Generate Final Report
         run: |
           echo ""
           echo "══════════════════════════════════════════════════════╗"
           echo "║         AFL++ FUZZING - FINAL REPORT                 ║"
           echo "╚══════════════════════════════════════════════════════╝"
           echo ""
-          echo "📊 STATISTICS:"
+          echo " STATISTICS:"
           echo "   • Total crashes found: ${{ steps.analyze.outputs.crash_count }}"
           echo "   • Unique crashes: ${{ steps.dedup.outputs.unique_count }}"
           echo "   • Unique bugs: 1"
@@ -222,8 +211,7 @@ JSONEOF
           echo ""
           echo "╔══════════════════════════════════════════════════════╗"
       
-      # ШАГ 11: Загрузка артефактов
-      - name: 11. Upload artifacts
+      - name: 12. Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: afl-fuzzing-results
@@ -233,8 +221,7 @@ JSONEOF
             blackbox-target/reports/
           retention-days: 7
       
-      # ШАГ 12: Summary для GitHub
-      - name: 12. Create Summary
+      - name: 13. Create Summary
         run: |
           echo "## 🎯 AFL++ Fuzzing Demo - Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
