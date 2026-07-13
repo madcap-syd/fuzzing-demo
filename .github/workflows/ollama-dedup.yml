@@ -1,4 +1,4 @@
-name: Ollama-Powered Deduplication
+name: Ollama-Powered Deduplication (with real AFL++)
 
 on:
   workflow_dispatch:
@@ -6,66 +6,75 @@ on:
     branches: ["**"]
 
 jobs:
-  ollama-dedup:
-    name: AI-Powered Crash Analysis
+  afl-ollama-demo:
+    name: AFL++ + Ollama AI Dedup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
+      - name: Install AFL++
+        run: sudo apt-get update && sudo apt-get install -y afl++ qemu-user
+      
       - name: Build target
         run: |
           cd blackbox-target
-          gcc -O0 -fno-stack-protector -z execstack -o target vulnerable.c
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
       
-      - name: Run fuzzing
+      - name: Run REAL AFL++ (15 sec burst)
         run: |
           set +e
           cd blackbox-target
           mkdir -p corpus crashes
-          python3 -c "print('B'*200)" > corpus/large.txt
+          python3 -c "print('B'*200)" > corpus/seed.txt
           
-          COUNT=0
-          for i in {1..100}; do
-            cp corpus/large.txt /tmp/test.txt
-            dd if=/dev/urandom bs=1 count=50 >> /tmp/test.txt 2>/dev/null
-            
-            # Запускаем и запоминаем код возврата ДО проверки
-            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1
-            EXIT_CODE=$?
-            
-            if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ]; then
-              COUNT=$((COUNT+1))
-              cp /tmp/test.txt crashes/crash_$COUNT.txt
-            fi
-          done
-          echo "✅ Found $COUNT crashes"
-          echo "crash_count=$COUNT" >> $GITHUB_OUTPUT
-        id: fuzz
+          echo "🚀 Запуск НАСТОЯЩЕГО AFL++ (QEMU mode, 15 секунд)..."
+          timeout 15s afl-fuzz -i corpus -o crashes -Q -- ./target @@ || true
+          
+          echo ""
+          echo "=== AFL++ NATIVE SUMMARY ==="
+          if [ -d "crashes/default/crashes" ]; then
+            COUNT=$(ls -1 crashes/default/crashes/ 2>/dev/null | wc -l)
+            echo "✅ AFL++ нашёл крашей: $COUNT"
+            echo "📁 Список краш-файлов:"
+            ls -lh crashes/default/crashes/ | tail -10
+          else
+            echo "⚠️ AFL++ не нашёл крашей за 15 сек (это бывает, но мы продолжим)"
+          fi
+        id: afl_run
       
-      - name: Run Ollama Deduplication
+      - name: Prepare crashes for Ollama
         run: |
           cd blackbox-target
-          echo "=== OLLAMA SEMANTIC DEDUP ==="
-          # Передаем абсолютный или относительный путь правильно
-          python3 ../scripts/ollama-dedup.py ./crashes
+          mkdir -p flat_crashes
+          # Копируем все краши из вложенной папки AFL++ в плоскую для нашего скрипта
+          cp crashes/default/crashes/* flat_crashes/ 2>/dev/null || true
+          cp crashes/default/hangs/* flat_crashes/ 2>/dev/null || true
+          echo "Подготовлено файлов для анализа: $(ls flat_crashes/ 2>/dev/null | wc -l)"
+      
+      - name: Run Ollama Semantic Deduplication
+        run: |
+          cd blackbox-target
+          echo "=== ЗАПУСК OLLAMA AI DEDUP ==="
+          python3 ../scripts/ollama-dedup.py ./flat_crashes
           echo ""
-          echo "=== RESULTS ==="
+          echo "=== ИТОГОВЫЙ JSON ОТЧЁТ ==="
           cat reports/ollama_bugs.json
-        id: ollama
       
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ollama-analysis-results
+          name: afl-ollama-results
           path: blackbox-target/reports/
           retention-days: 7
       
-      - name: Summary
+      - name: Summary for Team Lead
         run: |
-          echo "## 🦙 Ollama AI Deduplication Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🦙 AFL++ + Ollama AI Deduplication Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total crashes found:** ${{ steps.fuzz.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "### 1. AFL++ Fuzzing" >> $GITHUB_STEP_SUMMARY
+          echo "Запущен в режиме QEMU (Black Box) на 15 секунд." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "```json" >> $GITHUB_STEP_SUMMARY
+          echo "### 2. AI Deduplication" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
           cat blackbox-target/reports/ollama_bugs.json >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
