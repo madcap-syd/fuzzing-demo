@@ -12,7 +12,8 @@
 1. Fuzzing: 300 итераций -> 300 крашей
 2. Crash-level dedup: Группировка по размеру input -> 5 уникальных файлов
 3. Bug-level grouping: Все краши одного размера = ОДИН баг -> 1 уникальный баг
-4. ONE ticket per bug: Создаём 1 тикет в Jira, а не 300!
+4. **AI-Powered анализ (Ollama):** Мы добавили AI-powered дедупликацию с Ollama. Теперь система не просто сравнивает файлы по хэшу, а ПОНИМАЕТ, что за уязвимость в каждом краше. Это даёт более точную семантическую группировку и автоматическую генерацию human-readable отчётов.
+5. ONE ticket per bug: Создаём 1 тикет в Jira, а не 300!
 
 **Результат:** 300 крашей -> 5 файлов -> 1 баг -> 1 тикет в Jira
 
@@ -47,7 +48,7 @@ CWE: 476 (Null Pointer Dereference)
 CVSS: 9.8 (Critical)
 
 ### КОНТУР 2: Black Box Fuzzing (Production)
-**Инструмент:** Random Fuzzer + Smart Deduplication
+**Инструмент:** Random Fuzzer + Smart Deduplication + Ollama AI
 
 **Результаты:**
 - 300 итераций за 30 секунд
@@ -58,7 +59,8 @@ CVSS: 9.8 (Critical)
 **Как работает дедупликация:**
 1. Группируем краши по размеру input
 2. Одинаковый размер = одинаковый баг
-3. Создаём ОДИН тикет на группу
+3. Ollama анализирует семантику краша (тип уязвимости, CWE)
+4. Создаём ОДИН тикет на группу с AI-сгенерированным описанием
 
 ---
 
@@ -67,10 +69,11 @@ CVSS: 9.8 (Critical)
 ### Pipeline автоматически:
 1. Fuzzing (300 итераций)
 2. Deduplication (300 -> 1 уникальный)
-3. DefectDojo (1 finding per bug)
-4. Jira (1 ticket per bug)
-5. Email (1 notification per bug)
-6. Upload artifacts (все crash files)
+3. Ollama AI Analysis (семантическая группировка)
+4. DefectDojo (1 finding per bug)
+5. Jira (1 ticket per bug)
+6. Email (1 notification per bug)
+7. Upload artifacts (все crash files)
 
 ### GitHub Secrets:
 DEFECTDOJO_URL = https://defectdojo.company.com
@@ -94,7 +97,7 @@ JIRA_TOKEN = your-api-token
 ### Как соответствует:
 - White Box: SAST + DAST, точная классификация
 - Black Box: Чистый DAST, имитация внешнего злоумышленника
-- Smart Dedup: Не спамит команду (1 тикет вместо 300)
+- Smart Dedup + AI: Не спамит команду (1 тикет вместо 300), умная классификация
 
 ---
 
@@ -109,7 +112,7 @@ cd blackbox-target
 gcc -O0 -fno-stack-protector -z execstack -o target vulnerable.c
 mkdir -p corpus crashes
 echo "test" > corpus/small.txt
-python3 -c "print(A*100)" > corpus/large.txt
+python3 -c "print('A'*100)" > corpus/large.txt
 
 ---
 
@@ -125,9 +128,10 @@ python3 -c "print(A*100)" > corpus/large.txt
 │   ├── fuzzing.yml               # White Box pipeline
 │   └── blackbox-demo-simple.yml  # Black Box (РАБОЧИЙ!)
 ├── scripts/
-│   ── auto-fuzz-pipeline.py     # Automated pipeline
+│   ├── auto-fuzz-pipeline.py     # Automated pipeline
+│   └── ollama-dedup.py           # AI-powered deduplication
 ├── corpus/                       # Seed corpus
-── crashes/                      # Found crashes
+└── crashes/                      # Found crashes
 
 ---
 
@@ -153,7 +157,7 @@ python3 -c "print(A*100)" > corpus/large.txt
 |----------------|-----------|-----------|
 | Исходный код | Нужен | Не нужен |
 | Stack trace | Полный | Нет |
-| Классификация | Точная | По размеру input |
+| Классификация | Точная | AI + По размеру input |
 | Крашей найдено | 1 | 300 |
 | Тикетов в Jira | 1 | 1 (после dedup) |
 | ФСТЭК | SAST + DAST | DAST |
@@ -175,6 +179,7 @@ python3 -c "print(A*100)" > corpus/large.txt
 - libFuzzer - coverage-guided fuzzing
 - AddressSanitizer - memory error detection
 - AFL++ - advanced fuzzing with QEMU mode
+- Ollama - AI-powered semantic deduplication
 - Docker - containerization
 - GitHub Actions - CI/CD orchestration
 - DefectDojo - vulnerability management
@@ -192,6 +197,7 @@ python3 -c "print(A*100)" > corpus/large.txt
 ### Красный pipeline (найдена уязвимость):
 - Fuzzing находит 300 крашей
 - Дедупликация: 300 -> 1 уникальный
+- Ollama анализирует и группирует баги
 - DefectDojo создаёт 1 finding
 - Jira создаёт 1 тикет (SEC-XXX)
 - Email отправляется команде
