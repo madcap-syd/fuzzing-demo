@@ -19,7 +19,7 @@ jobs:
       
       - name: Run fuzzing
         run: |
-          set +e  # НЕ выходим при ошибках!
+          set +e
           cd blackbox-target
           mkdir -p corpus crashes
           python3 -c "print('B'*200)" > corpus/large.txt
@@ -28,8 +28,12 @@ jobs:
           for i in {1..100}; do
             cp corpus/large.txt /tmp/test.txt
             dd if=/dev/urandom bs=1 count=50 >> /tmp/test.txt 2>/dev/null
-            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1 || true
-            if [ $? -eq 139 ] || [ $? -eq 134 ]; then
+            
+            # Запускаем и запоминаем код возврата ДО проверки
+            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1
+            EXIT_CODE=$?
+            
+            if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ]; then
               COUNT=$((COUNT+1))
               cp /tmp/test.txt crashes/crash_$COUNT.txt
             fi
@@ -38,14 +42,12 @@ jobs:
           echo "crash_count=$COUNT" >> $GITHUB_OUTPUT
         id: fuzz
       
-      - name: Install Python dependencies
-        run: pip install requests
-      
       - name: Run Ollama Deduplication
         run: |
           cd blackbox-target
           echo "=== OLLAMA SEMANTIC DEDUP ==="
-          python3 ../scripts/ollama-dedup.py crashes
+          # Передаем абсолютный или относительный путь правильно
+          python3 ../scripts/ollama-dedup.py ./crashes
           echo ""
           echo "=== RESULTS ==="
           cat reports/ollama_bugs.json
@@ -64,5 +66,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Total crashes found:** ${{ steps.fuzz.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**AI Analysis:**" >> $GITHUB_STEP_SUMMARY
+          echo "```json" >> $GITHUB_STEP_SUMMARY
           cat blackbox-target/reports/ollama_bugs.json >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
