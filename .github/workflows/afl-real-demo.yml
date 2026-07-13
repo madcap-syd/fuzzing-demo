@@ -1,0 +1,72 @@
+name: AFL++ Real Demo
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  afl-fuzzing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install AFL++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y afl++ qemu-user
+          afl-fuzz --version
+
+      - name: Fix core_pattern (CRITICAL for CI)
+        run: |
+          echo "core" | sudo tee /proc/sys/kernel/core_pattern
+          cat /proc/sys/kernel/core_pattern
+
+      - name: Build Target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          file target
+
+      - name: Create Corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus
+          python3 -c "print('A'*200)" > corpus/seed.txt
+
+      - name: Run AFL++ (60 seconds)
+        run: |
+          set +e
+          cd blackbox-target
+          echo "🚀 Starting AFL++ in QEMU mode for 60 seconds..."
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+          timeout 60s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          echo "✅ AFL++ run finished."
+
+      - name: Show Results & Summary
+        run: |
+          cd blackbox-target
+          echo "=== AFL++ OUTPUT ==="
+          ls -la afl_out/
+          
+          if [ -d "afl_out/default/crashes" ]; then
+            COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+            echo ""
+            echo "🎯 SUCCESS: Found $COUNT crashes!"
+            echo ""
+            echo "Crash files:"
+            ls -lh afl_out/default/crashes/
+            
+            echo "## 🎯 AFL++ Real Fuzzing Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Crashes found:** $COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Crash Files:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            ls -lh afl_out/default/crashes/ >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No crashes directory found."
+            echo "## ⚠️ No crashes found in this run" >> $GITHUB_STEP_SUMMARY
+          fi
