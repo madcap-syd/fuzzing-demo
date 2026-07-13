@@ -1,47 +1,41 @@
 #!/bin/bash
+set +e  # НЕ выходим при ошибках!
 
-CORPUS_DIR="./corpus"
-CRASHES_DIR="./crashes"
-TARGET="./target"
+TARGET="$1"
+ITERATIONS=${2:-300}
 
-mkdir -p $CORPUS_DIR $CRASHES_DIR
-
-echo "AAAA" > $CORPUS_DIR/seed1.txt
-echo "BBBBBBBB" > $CORPUS_DIR/seed2.txt
-
-echo "🚀 Starting Black Box Fuzzing..."
+echo " Starting Black Box Fuzzing..."
+echo "Target: $TARGET"
+echo "Iterations: $ITERATIONS"
+echo ""
 
 CRASH_COUNT=0
 
-for i in {1..300}; do
-    SEED=$(ls $CORPUS_DIR | shuf -n 1)
+for i in $(seq 1 $ITERATIONS); do
+    # Generate random input
+    dd if=/dev/urandom bs=1 count=$((RANDOM % 200 + 50)) of=/tmp/mutated.txt 2>/dev/null
     
-    cp $CORPUS_DIR/$SEED /tmp/mutated.txt
-    
-    RANDOM_SIZE=$(( (RANDOM % 240) + 10 ))
-    dd if=/dev/urandom bs=1 count=$RANDOM_SIZE >> /tmp/mutated.txt 2>/dev/null
-    
-    if [ $((RANDOM % 3)) -eq 0 ]; then
-        cat /tmp/mutated.txt /tmp/mutated.txt > /tmp/mutated2.txt
-        mv /tmp/mutated2.txt /tmp/mutated.txt
-    fi
-    
-    timeout 1s $TARGET /tmp/mutated.txt > /dev/null 2>&1
+    # Run target and capture exit code
+    timeout 1s $TARGET /tmp/mutated.txt >/dev/null 2>&1
     EXIT_CODE=$?
     
     if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 136 ]; then
         CRASH_COUNT=$((CRASH_COUNT + 1))
-        echo "💥 CRASH #$CRASH_COUNT! Exit code: $EXIT_CODE (iteration $i)"
-        cp /tmp/mutated.txt $CRASHES_DIR/crash_$(printf "%03d" $CRASH_COUNT).txt
+        echo " CRASH #$CRASH_COUNT! Exit code: $EXIT_CODE (iteration $i)"
+        cp /tmp/mutated.txt crashes/crash_$CRASH_COUNT.txt
     fi
     
+    # Progress
     if [ $((i % 50)) -eq 0 ]; then
-        echo "  Progress: $i/300 | Crashes: $CRASH_COUNT"
+        echo "Progress: $i/$ITERATIONS iterations, $CRASH_COUNT crashes found"
     fi
 done
 
 echo ""
-echo "✅ Fuzzing completed!"
-echo "Total iterations: 300"
+echo "=== FUZZING COMPLETE ==="
+echo "Total iterations: $ITERATIONS"
 echo "Crashes found: $CRASH_COUNT"
-ls -lh $CRASHES_DIR/
+echo "Crashes saved to: $(pwd)/crashes/"
+
+# Return success even if crashes found
+exit 0
