@@ -1,9 +1,7 @@
-name: 01-WhiteBox-Fuzzing (libFuzzer)
+name: 01-WhiteBox-Fuzzing (libFuzzer + ASan)
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
@@ -12,63 +10,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install dependencies
+
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build target with libFuzzer + ASan
         run: |
-          sudo apt-get update
-          sudo apt-get install -y g++ clang llvm
-      
-      - name: Build with ASan
-        run: |
-          echo "🔧 Building WhiteBox target with AddressSanitizer..."
-          g++ -fsanitize=address -fno-omit-frame-pointer -g -O1 -c harness.cpp -o harness.o
-          echo "✅ Compiled successfully"
-          file harness.o
-      
+          echo "🔧 Building WhiteBox target with libFuzzer + AddressSanitizer..."
+          clang++ -fsanitize=fuzzer,address -fno-omit-frame-pointer -g -O1 harness.cpp -o harness_fuzzer
+          chmod +x harness_fuzzer
+          file harness_fuzzer
+          echo "✅ Compiled as executable!"
+
       - name: Run libFuzzer (60 sec)
         run: |
           set +e
-          echo "⏱️  Running libFuzzer for 60 seconds..."
-          
-          # Создаём директорию для артефактов
           mkdir -p corpus crashes
-          
-          # Запускаем libFuzzer
-          timeout 60s ./harness.o -max_total_time=60 -artifact_prefix=crashes/ corpus/ || true
-          
-          echo "✅ libFuzzer finished"
-          
-          # Считаем краши
+          echo "⏱️  Running libFuzzer for 60 seconds..."
+          timeout 60s ./harness_fuzzer -max_total_time=60 -artifact_prefix=crashes/ corpus/ || true
           CRASH_COUNT=$(ls -1 crashes/ 2>/dev/null | wc -l)
+          echo "🎯 Found $CRASH_COUNT crashes"
           echo "crash_count=$CRASH_COUNT" >> $GITHUB_OUTPUT
         id: fuzz
-      
+
       - name: Show Results
         run: |
           echo ""
-          echo "=== WHITEBOX FUZZING RESULTS ==="
-          echo "Crashes found: ${{ steps.fuzz.outputs.crash_count }}"
+          echo "════════════════════════════════════════"
+          echo "  WHITEBOX FUZZING RESULTS"
+          echo "════════════════════════════════════════"
+          echo "  Crashes found: ${{ steps.fuzz.outputs.crash_count }}"
+          echo "  Instrument: libFuzzer + AddressSanitizer"
+          echo "  Duration: 60 seconds"
           echo ""
-          
           if [ "${{ steps.fuzz.outputs.crash_count }}" -gt 0 ]; then
-            echo "🎯 Found crashes!"
+            echo " Crash files:"
             ls -lh crashes/
-            
-            echo ""
-            echo "## 🎯 WhiteBox libFuzzer Results" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Crashes found:** ${{ steps.fuzz.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Crash Files:" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            ls -lh crashes/ >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No crashes found (target may be safe)"
-            echo "## ✅ WhiteBox: No crashes found" >> $GITHUB_STEP_SUMMARY
           fi
-        id: results
-      
+          echo "════════════════════════════════════════"
+          
+          echo "## 🔍 WhiteBox Fuzzing (libFuzzer + ASan)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Crashes found:** ${{ steps.fuzz.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instrument | libFuzzer + AddressSanitizer |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | 60 sec |" >> $GITHUB_STEP_SUMMARY
+          echo "| Crashes | ${{ steps.fuzz.outputs.crash_count }} |" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload Artifacts
         if: steps.fuzz.outputs.crash_count > 0
         uses: actions/upload-artifact@v4
