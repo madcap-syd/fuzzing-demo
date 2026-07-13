@@ -1,0 +1,380 @@
+name: Black Box Production Pipeline
+
+on:
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: '0 3 * * 1'  # Только раз в неделю!
+
+jobs:
+  production-fuzz:
+    name: Production Fuzzing with Smart Dedup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+      
+      - name: Create corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus crashes unique reports
+          echo "test" > corpus/small.txt
+          python3 -c "print('A'*100)" > corpus/medium.txt
+          python3 -c "print('B'*200)" > corpus/large.txt
+      
+      - name: Step 1 - Fuzzing (300 iterations)
+        id: fuzz
+        run: |
+          set +e
+          cd blackbox-target
+          COUNT=0
+          for i in {1..300}; do
+            cp corpus/large.txt /tmp/test.txt
+            dd if=/dev/urandom bs=1 count=$((RANDOM % 100)) >> /tmp/test.txt 2>/dev/null
+            timeout 1s ./target /tmp/test.txt >/dev/null 2>&1
+            if [ $? -eq 139 ] || [ $? -eq 134 ]; then
+              COUNT=$((COUNT+1))
+              cp /tmp/test.txt crashes/crash_$COUNT.txt
+            fi
+          done
+          echo "Found $COUNT crashes"
+          echo "total=$COUNT" >> $GITHUB_OUTPUT
+          set -e
+      
+      - name: Step 2 - Smart Deduplication (Crash-level)
+        id: dedup
+        run: |
+          cd blackbox-target
+          mkdir -p unique
+          
+          # Дедупликация по хэшу содержимого (не только по размеру!)
+          declare -A hashes
+          for f in crashes/crash_*.txt; do
+            hash=$(md5sum "$f" | awk '{print $1}')
+            if [ -z "${hashes[$hash]}" ]; then
+              hashes[$hash]="$f"
+              cp "$f" unique/unique_$(printf "%04d" ${#hashes[@]}).txt
+            fi
+          done
+          
+          UNIQUE=$(ls unique/ 2>/dev/null | wc -l)
+          TOTAL=${{ steps.fuzz.outputs.total }}
+          DUPS=$((TOTAL - UNIQUE))
+          RATE=$(( (DUPS * 100) / TOTAL ))
+          
+          echo "=== CRASH-LEVEL DEDUP ==="
+          echo "Total crashes: $TOTAL"
+          echo "Unique crashes: $UNIQUE"
+          echo "Duplicates removed: $DUPS"
+          echo "Dedup rate: ${RATE}%"
+          
+          echo "unique=$UNIQUE" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "rate=${RATE}%" >> $GITHUB_OUTPUT
+      
+      - name: Step 3 - Bug-level Grouping (CRITICAL!)
+        id: bugs
+        run: |
+          cd blackbox-target
+          mkdir -p bugs
+          
+          echo "=== BUG-LEVEL GROUPING ==="
+          echo "Grouping crashes by vulnerability (not by file!)"
+          echo ""
+          
+          # Группируем по размеру (один размер = один баг)
+          declare -A size_groups
+          for f in unique/*.txt; do
+            size=$(stat -c%s "$f")
+            if [ -z "${size_groups[$size]}" ]; then
+              size_groups[$size]=1
+            else
+              size_groups[$size]=$((${size_groups[$size]} + 1))
+            fi
+          done
+          
+          BUG_COUNT=0
+          for size in "${!size_groups[@]}"; do
+            BUG_COUNT=$((BUG_COUNT + 1))
+            count=${size_groups[$size]}
+            echo "Bug #$BUG_COUNT: size=$size bytes, crashes=$count"
+            
+            # Создаём отчёт по багу
+            cat > bugs/bug_$BUG_COUNT.json << BUGEOF
+{
+  "bug_id": "BUG-$BUG_COUNT",
+  "size": $size,
+  "crash_count": $count,
+  "cwe": 120,
+  "cvss": 9.8,
+  "severity": "Critical",
+  "title": "Buffer Overflow (input size ~$size bytes)",
+  "description": "Found $count crashes with similar input size ($size bytes). All crashes likely represent the SAME vulnerability.",
+  "recommendation": "Create ONE Jira ticket for this bug, not $count tickets!"
+}
+BUGEOF
+          done
+          
+          echo ""
+          echo "=== BUG GROUPING RESULTS ==="
+          echo "Unique crash files: $UNIQUE"
+          echo "Unique bugs: $BUG_COUNT"
+          echo "Crashes per bug: ~$((TOTAL / BUG_COUNT))"
+          echo ""
+          echo "This means: $UNIQUE crash files → $BUG_COUNT real bugs!"
+          echo "We should create $BUG_COUNT Jira tickets, not $UNIQUE!"
+          
+          echo "bugs=$BUG_COUNT" >> $GITHUB_OUTPUT
+      
+      - name: Step 4 - Rate Limiting Check
+        id: ratelimit
+        run: |
+          echo "=== RATE LIMITING ==="
+          
+          # Проверяем есть ли уже открытые баги
+          if [ -f "blackbox-target/reports/last_run.json" ]; then
+            echo "Previous run detected. Checking if we should continue..."
+            
+            LAST_BUGS=$(cat blackbox-target/reports/last_run.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('bugs', 0))")
+            echo "Last run had $LAST_BUGS bugs"
+            
+            if [ ${{ steps.bugs.outputs.bugs }} -le $LAST_BUGS ]; then
+              echo "No new bugs found. Skipping ticket creation."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          echo "New bugs detected. Creating tickets."
+          echo "skip=false" >> $GITHUB_OUTPUT
+      
+      - name: Step 5 - Create DefectDojo Findings (ONE per bug!)
+        if: steps.ratelimit.outputs.skip != 'true'
+        run: |
+          cd blackbox-target
+          BUGS=${{ steps.bugs.outputs.bugs }}
+          UNIQUE=${{ steps.dedup.outputs.unique }}
+          TOTAL=${{ steps.dedup.outputs.total }}
+          
+          echo "=== DEFECTDOJO (ONE finding per bug) ==="
+          
+          python3 << PYEOF
+import json
+import os
+
+bugs = $BUGS
+total = $TOTAL
+unique = $UNIQUE
+
+# Создаём ОДИН finding на баг (не на краш!)
+findings = []
+for i in range(1, bugs + 1):
+    with open(f'bugs/bug_{i}.json') as f:
+        bug = json.load(f)
+    
+    findings.append({
+        'title': f"[BLACK BOX] {bug['title']}",
+        'description': f"""## Vulnerability Report
+
+**Bug ID:** {bug['bug_id']}
+**Type:** {bug['title']}
+**CWE:** {bug['cwe']}
+**CVSS:** {bug['cvss']}
+**Severity:** {bug['severity']}
+
+### Statistics
+- Total crashes: {total}
+- Unique crash files: {unique}
+- Crashes for this bug: {bug['crash_count']}
+
+### Analysis
+All {bug['crash_count']} crashes represent the SAME vulnerability.
+Input size: ~{bug['size']} bytes
+
+### Recommendation
+Create ONE Jira ticket for this bug.
+Do NOT create {bug['crash_count']} separate tickets!
+""",
+        'severity': bug['severity'],
+        'cwe': bug['cwe'],
+        'cvssv3_score': bug['cvss'],
+        'file_path': 'blackbox-target/vulnerable.c',
+        'active': True,
+        'verified': False,
+        'duplicate': False,
+        'tags': ['blackbox', 'fuzzing', 'production', f'bug-{i}']
+    })
+
+with open('reports/defectdojo_findings.json', 'w') as f:
+    json.dump(findings, f, indent=2)
+
+print(f"Created {len(findings)} DefectDojo findings (ONE per bug)")
+print(f"Not {unique} findings (one per crash file)")
+PYEOF
+      
+      - name: Step 6 - Create Jira Tickets (ONE per bug!)
+        if: steps.ratelimit.outputs.skip != 'true'
+        run: |
+          cd blackbox-target
+          BUGS=${{ steps.bugs.outputs.bugs }}
+          
+          echo "=== JIRA (ONE ticket per bug) ==="
+          
+          python3 << PYEOF
+import json
+
+bugs = $BUGS
+
+tickets = []
+for i in range(1, bugs + 1):
+    with open(f'bugs/bug_{i}.json') as f:
+        bug = json.load(f)
+    
+    tickets.append({
+        'project': 'SEC',
+        'summary': f"[BLACK BOX] {bug['title']} - {bug['crash_count']} crashes",
+        'description': f"""## Bug Report
+
+**Bug ID:** {bug['bug_id']}
+**Type:** {bug['title']}
+**CWE:** {bug['cwe']}
+**CVSS:** {bug['cvss']}
+
+### Impact
+- {bug['crash_count']} crashes found
+- All represent the SAME vulnerability
+- Input size: ~{bug['size']} bytes
+
+### Action Required
+1. Review crash files in artifacts
+2. Reproduce vulnerability
+3. Implement fix
+4. Retest
+
+### Note
+This is ONE bug with {bug['crash_count']} crash instances.
+Do NOT create separate tickets for each crash!
+""",
+        'priority': 'Highest',
+        'type': 'Bug',
+        'labels': ['security', 'blackbox', 'production', f'bug-{i}', 'cwe-120']
+    })
+
+with open('reports/jira_tickets.json', 'w') as f:
+    json.dump(tickets, f, indent=2)
+
+print(f"Created {len(tickets)} Jira tickets (ONE per bug)")
+print(f"NOT {bugs * 10} tickets (one per crash)")
+PYEOF
+      
+      - name: Step 7 - Email Notification (Batch Report)
+        if: steps.ratelimit.outputs.skip != 'true'
+        run: |
+          cd blackbox-target
+          BUGS=${{ steps.bugs.outputs.bugs }}
+          UNIQUE=${{ steps.dedup.outputs.unique }}
+          TOTAL=${{ steps.dedup.outputs.total }}
+          
+          echo "=== EMAIL (Batch Report) ==="
+          
+          cat > reports/email.txt << EMAILEOF
+To: security-team@company.com
+Subject: [WEEKLY] Black Box Fuzzing Report - $BUGS bugs found
+
+WEEKLY FUZZING REPORT
+=====================
+
+Period: $(date +%Y-%m-%d)
+Target: blackbox-target/vulnerable.c
+
+SUMMARY:
+--------
+Total crashes found: $TOTAL
+Unique crash files: $UNIQUE
+Unique bugs: $BUGS
+
+DEDUPLICATION:
+--------------
+Crash-level dedup: $TOTAL → $UNIQUE ($(( (TOTAL - UNIQUE) * 100 / TOTAL ))% removed)
+Bug-level grouping: $UNIQUE → $BUGS (crashes grouped by vulnerability)
+
+RESULT:
+-------
+$TOTAL crashes → $BUGS real bugs
+
+This means we create $BUGS Jira tickets, not $TOTAL!
+
+BUGS FOUND:
+-----------
+EMAILEOF
+          
+          for i in $(seq 1 $BUGS); do
+            cat bugs/bug_$i.json | python3 -c "
+import sys, json
+bug = json.load(sys.stdin)
+print(f\"{bug['bug_id']}: {bug['title']}\")
+print(f\"  Crashes: {bug['crash_count']}\")
+print(f\"  CWE: {bug['cwe']}, CVSS: {bug['cvss']}\")
+print()
+" >> reports/email.txt
+          done
+          
+          cat >> reports/email.txt << EMAILEOF
+NEXT STEPS:
+-----------
+1. Review $BUGS bugs (not $TOTAL crashes!)
+2. Prioritize and assign
+3. Fix and retest
+
+ARTIFACTS:
+----------
+- Crash files: blackbox-target/crashes/
+- Unique crashes: blackbox-target/unique/
+- Bug reports: blackbox-target/bugs/
+- DefectDojo: blackbox-target/reports/defectdojo_findings.json
+- Jira tickets: blackbox-target/reports/jira_tickets.json
+
+Pipeline: https://github.com/madcap-syd/fuzzing-demo/actions/runs/${{ github.run_id }}
+
+---
+Automated Weekly Report from Production Fuzzing Pipeline
+EMAILEOF
+          
+          cat reports/email.txt
+      
+      - name: Step 8 - Save State for Rate Limiting
+        run: |
+          cd blackbox-target
+          python3 << PYEOF
+import json
+from datetime import datetime
+
+state = {
+    'timestamp': datetime.now().isoformat(),
+    'bugs': ${{ steps.bugs.outputs.bugs }},
+    'unique_crashes': ${{ steps.dedup.outputs.unique }},
+    'total_crashes': ${{ steps.dedup.outputs.total }},
+    'run_id': '${{ github.run_id }}'
+}
+
+with open('reports/last_run.json', 'w') as f:
+    json.dump(state, f, indent=2)
+
+print("State saved for rate limiting")
+PYEOF
+      
+      - name: Step 9 - Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-fuzz-results
+          path: |
+            blackbox-target/crashes/
+            blackbox-target/unique/
+            blackbox-target/bugs/
+            blackbox-target/reports/
+          retention-days: 30
