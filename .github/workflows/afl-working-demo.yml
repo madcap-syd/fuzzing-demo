@@ -1,0 +1,88 @@
+name: AFL++ Working Demo (Fixed)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["presentation-crash-demo"]
+
+jobs:
+  afl-working:
+    name: AFL++ Real Fuzzing
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 2. Install AFL++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y afl++ qemu-user
+          afl-fuzz --version
+      
+      - name: 3. Fix core_pattern (CRITICAL!)
+        run: |
+          echo "core" | sudo tee /proc/sys/kernel/core_pattern
+          echo "✅ core_pattern fixed!"
+          cat /proc/sys/kernel/core_pattern
+      
+      - name: 4. Build target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          file target
+      
+      - name: 5. Create corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus
+          python3 -c "print('B'*200)" > corpus/seed.txt
+          ls -lh corpus/
+      
+      - name: 6. Run AFL++ (3 min)
+        run: |
+          set +e
+          cd blackbox-target
+          
+          echo "🚀 Starting AFL++ in QEMU mode..."
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+          
+          timeout 180s afl-fuzz -i corpus -o afl_output -Q -- ./target @@
+          
+          echo "✅ AFL++ finished!"
+      
+      - name: 7. Show AFL++ Results
+        run: |
+          cd blackbox-target
+          
+          echo ""
+          echo "=== AFL++ OUTPUT ==="
+          ls -la afl_output/
+          
+          if [ -d "afl_output/default/crashes" ]; then
+            CRASH_COUNT=$(ls -1 afl_output/default/crashes 2>/dev/null | wc -l)
+            
+            echo ""
+            echo "=== CRASHES FOUND ==="
+            echo "✅ Total: $CRASH_COUNT crashes"
+            echo ""
+            echo "Files:"
+            ls -lh afl_output/default/crashes/ | head -10
+            
+            echo "crash_count=$CRASH_COUNT" >> $GITHUB_OUTPUT
+          else
+            echo " No crashes found"
+            echo "crash_count=0" >> $GITHUB_OUTPUT
+          fi
+        id: results
+      
+      - name: 8. Summary
+        run: |
+          echo "## 🎯 AFL++ Fuzzing Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Crashes found:** ${{ steps.results.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### AFL++ Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh blackbox-target/afl_output/default/crashes/ 2>/dev/null | head -10 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
