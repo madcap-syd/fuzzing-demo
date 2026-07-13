@@ -13,27 +13,24 @@ jobs:
       
       - name: Install AFL++ from source (with QEMU)
         run: |
-          echo " Installing dependencies..."
+          echo "🔧 Installing dependencies..."
           sudo apt-get update
-          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev libtool libtool-bin autoconf automake
+          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev libtool libtool-bin autoconf automake meson ninja-build
           
-          # ИСПРАВЛЕНИЕ: Устанавливаем Meson и Ninja
-          sudo apt-get install -y meson ninja-build
-          
-          echo " Cloning AFL++..."
+          echo "📥 Cloning AFL++..."
           cd /tmp
           git clone https://github.com/AFLplusplus/AFLplusplus.git
           cd AFLplusplus
           
-          echo " Building AFL++..."
+          echo "🔨 Building AFL++..."
           make distrib -j$(nproc)
           sudo make install
           
-          echo " Building QEMU mode..."
+          echo "🔨 Building QEMU mode..."
           cd qemu_mode
           ./build_qemu_support.sh
           
-          echo " AFL++ installed successfully!"
+          echo "✅ AFL++ installed successfully!"
           afl-fuzz --version
       
       - name: Fix core_pattern
@@ -44,33 +41,68 @@ jobs:
         run: |
           cd blackbox-target
           gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          file target
       
-      - name: Create Corpus
+      - name: Create SAFE Corpus (non-crashing seeds)
         run: |
           cd blackbox-target
           mkdir -p corpus
-          python3 -c "print('B'*200)" > corpus/seed.txt
+          # ВАЖНО: Seed должен быть КОРОТКИМ и НЕ вызывать краш!
+          echo "test" > corpus/seed1.txt
+          echo "AAAA" > corpus/seed2.txt
+          python3 -c "print('B'*10)" > corpus/seed3.txt
+          echo "✅ Safe corpus created:"
+          ls -lh corpus/
       
-      - name: Run AFL++ (120 sec)
+      - name: Run AFL++ (180 sec)
         run: |
           set +e
           cd blackbox-target
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           export AFL_SKIP_CPUFREQ=1
-          timeout 120s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          
+          echo "🚀 Starting AFL++ in QEMU mode for 3 minutes..."
+          timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          
+          echo "✅ AFL++ finished"
       
       - name: Show Results
         run: |
           cd blackbox-target
+          
+          echo ""
+          echo "=== AFL++ RESULTS ==="
+          
           if [ -d "afl_out/default/crashes" ]; then
             COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
-            echo "🎯 Found $COUNT crashes!"
-            ls -lh afl_out/default/crashes/ | head -10
-            echo "## 🎯 AFL++ Found $COUNT Crashes" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            ls -lh afl_out/default/crashes/ | head -10 >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$COUNT" -gt 0 ]; then
+              echo ""
+              echo " SUCCESS: Found $COUNT crashes!"
+              echo ""
+              echo "Crash files:"
+              ls -lh afl_out/default/crashes/ | head -10
+              
+              echo ""
+              echo "## 🎯 AFL++ Found $COUNT Crashes" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Crash Files:" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              ls -lh afl_out/default/crashes/ | head -10 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ No crashes found"
+              echo "## ⚠️ AFL++ found 0 crashes" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "No crashes found"
-            echo "## ️ No crashes" >> $GITHUB_STEP_SUMMARY
+            echo "No crashes directory"
+            echo "## ⚠️ No crashes directory created" >> $GITHUB_STEP_SUMMARY
           fi
+        id: results
+      
+      - name: Upload Artifacts
+        if: steps.results.outputs.crash_count > 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: aflpp-crashes
+          path: blackbox-target/afl_out/default/crashes/
