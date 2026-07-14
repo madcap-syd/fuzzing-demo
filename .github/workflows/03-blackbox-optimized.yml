@@ -1,0 +1,134 @@
+name: 03-BlackBox-Optimized (Production Ready)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  blackbox-optimized:
+    name: AFL++ with Local Dedup
+    runs-on: ubuntu-latest
+    container: aflplusplus/aflplusplus:latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fix core_pattern
+        run: echo "core" > /proc/sys/kernel/core_pattern 2>/dev/null || true
+
+      - name: Build Target
+        run: |
+          cd blackbox-target
+          gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+          strip target
+          file target
+
+      - name: Create Corpus
+        run: |
+          cd blackbox-target
+          mkdir -p corpus
+          echo "test" > corpus/seed1.txt
+          echo "AAAA" > corpus/seed2.txt
+          python3 -c "print('B'*10)" > corpus/seed3.txt
+
+      - name: Run AFL++ (180 sec)
+        run: |
+          set +e
+          cd blackbox-target
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+          export AFL_SKIP_CPUFREQ=1
+          timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+
+      - name: Count and Prepare Crashes
+        run: |
+          cd blackbox-target
+          mkdir -p unique_crashes reports flat_crashes
+          
+          CRASH_COUNT=0
+          UNIQUE_COUNT=0
+          
+          if [ -d "afl_out/default/crashes" ]; then
+            # Копируем и переименовываем ВСЕ файлы (убираем двоеточия!)
+            for f in afl_out/default/crashes/*; do
+              if [ -f "$f" ]; then
+                CRASH_COUNT=$((CRASH_COUNT + 1))
+                # Заменяем все спецсимволы на подчёркивания
+                safe_name=$(basename "$f" | tr ':<>"|?*' '_______')
+                cp "$f" "flat_crashes/$safe_name"
+                UNIQUE_COUNT=$((UNIQUE_COUNT + 1))
+              fi
+            done
+          fi
+          
+          echo "🎯 Found $CRASH_COUNT crashes"
+          echo "crash_count=$CRASH_COUNT" >> $GITHUB_OUTPUT
+          echo "unique_count=$UNIQUE_COUNT" >> $GITHUB_OUTPUT
+          
+          echo ""
+          echo "=== FILES PREPARED ==="
+          ls -lh flat_crashes/ || echo "No files"
+        id: prepare
+
+      - name: Local Deduplication
+        if: steps.prepare.outputs.crash_count > 0
+        run: |
+          cd blackbox-target
+          
+          echo "🔄 Running local deduplication..."
+          
+          # Простая дедупликация по размеру
+          declare -A seen_sizes
+          FINAL_UNIQUE=0
+          
+          for f in flat_crashes/*; do
+            if [ -f "$f" ]; then
+              size=$(stat -c%s "$f")
+              if [ -z "${seen_sizes[$size]}" ]; then
+                seen_sizes[$size]=1
+                FINAL_UNIQUE=$((FINAL_UNIQUE + 1))
+                cp "$f" "unique_crashes/crash_${FINAL_UNIQUE}_size${size}.txt"
+              fi
+            fi
+          done
+          
+          echo "unique_final=$FINAL_UNIQUE" >> $GITHUB_OUTPUT
+          
+          echo ""
+          echo "=== DEDUP RESULTS ==="
+          echo "Raw: ${{ steps.prepare.outputs.crash_count }}"
+          echo "Unique: $FINAL_UNIQUE"
+          
+          # Отчёт
+          cat > reports/dedup_report.json << JSONEOF
+{
+  "method": "Local Size-based Dedup",
+  "external_api": false,
+  "raw_crashes": ${{ steps.prepare.outputs.crash_count }},
+  "unique_crashes": $FINAL_UNIQUE,
+  "reduction": "$(( (${{ steps.prepare.outputs.crash_count }} - $FINAL_UNIQUE) * 100 / ${{ steps.prepare.outputs.crash_count }} ))%"
+}
+JSONEOF
+        id: dedup
+
+      - name: Upload Artifacts
+        if: steps.prepare.outputs.crash_count > 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimized-results
+          path: |
+            blackbox-target/flat_crashes/
+            blackbox-target/unique_crashes/
+            blackbox-target/reports/
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## 🎯 BlackBox Optimized Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | AFL++ (Docker) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Crashes | ${{ steps.prepare.outputs.crash_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unique | ${{ steps.dedup.outputs.unique_final }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | Local only (no API) |" >> $GITHUB_STEP_SUMMARY
