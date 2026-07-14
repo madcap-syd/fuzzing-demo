@@ -1,28 +1,42 @@
-name: 02-BlackBox-Fuzzing
+name: 02-BlackBox-Fuzzing (Self-Hosted)
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   blackbox:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install AFL++
+      - name: Check Runner Environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget
-          sudo apt-get install -y pkg-config libglib2.0-dev libpixman-1-dev
-          sudo apt-get install -y meson ninja-build
-          cd /tmp
-          git clone https://github.com/AFLplusplus/AFLplusplus.git
-          cd AFLplusplus
-          make distrib -j$(nproc)
-          sudo make install
-          cd qemu_mode
-          ./build_qemu_support.sh
+          echo "=== Running on Self-Hosted Runner ==="
+          uname -a
+          free -h
+          nproc
+          docker --version
+
+      - name: Install AFL++ (if not present)
+        run: |
+          if ! command -v afl-fuzz &> /dev/null; then
+            echo "Installing AFL++..."
+            sudo apt-get update
+            sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev meson ninja-build
+            cd /tmp
+            git clone https://github.com/AFLplusplus/AFLplusplus.git
+            cd AFLplusplus
+            make distrib -j$(nproc)
+            sudo make install
+            cd qemu_mode
+            ./build_qemu_support.sh
+            echo "AFL++ installed and cached!"
+          else
+            echo "AFL++ already installed (using cache)!"
+          fi
+          afl-fuzz --version
 
       - name: Fix core_pattern
         run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
@@ -40,7 +54,7 @@ jobs:
           echo "test" > corpus/seed1.txt
           echo "AAAA" > corpus/seed2.txt
 
-      - name: Run AFL++
+      - name: Run AFL++ (180 sec)
         run: |
           set +e
           cd blackbox-target
@@ -53,19 +67,14 @@ jobs:
         run: |
           cd blackbox-target
           mkdir -p unique_crashes reports
-          
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
-          echo "Raw crashes: $RAW_COUNT"
-          
           UNIQUE_COUNT=0
           declare -A seen_hashes
-          
           for f in afl_out/default/crashes/*; do
             if [ -f "$f" ]; then
               hash=$(md5sum "$f" | cut -d' ' -f1)
               size=$(stat -c%s "$f")
               key="${hash}_${size}"
-              
               if [ -z "${seen_hashes[$key]}" ]; then
                 seen_hashes[$key]=1
                 UNIQUE_COUNT=$((UNIQUE_COUNT + 1))
@@ -74,23 +83,14 @@ jobs:
               fi
             fi
           done
-          
           DUPLICATES=$((RAW_COUNT - UNIQUE_COUNT))
           DEDUP_RATE=0
           [ "$RAW_COUNT" -gt 0 ] && DEDUP_RATE=$((DUPLICATES * 100 / RAW_COUNT))
-          
           echo "raw_count=$RAW_COUNT" >> $GITHUB_OUTPUT
           echo "unique_count=$UNIQUE_COUNT" >> $GITHUB_OUTPUT
           echo "duplicates=$DUPLICATES" >> $GITHUB_OUTPUT
           echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
-          
-          echo ""
-          echo "=== DEDUPLICATION ==="
-          echo "Raw: $RAW_COUNT"
-          echo "Unique: $UNIQUE_COUNT"
-          echo "Duplicates: $DUPLICATES (${DEDUP_RATE}%)"
-          
-          echo '{"tool":"AFL++","raw":'$RAW_COUNT',"unique":'$UNIQUE_COUNT',"dedup":'$DUPLICATES'}' > reports/fuzzing_report.json
+          echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -103,16 +103,13 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## BlackBox Fuzzing Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎯 BlackBox Fuzzing Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Tool | AFL++ (QEMU) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Duration | 180 sec |" >> $GITHUB_STEP_SUMMARY
-          echo "| Raw crashes | ${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Unique | ${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dedup rate | ${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "- Jira/DefectDojo integration: Add secrets to enable" >> $GITHUB_STEP_SUMMARY
-          echo "- See artifacts for crash files" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner** | Self-Hosted (Local Ubuntu) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tool** | AFL++ (QEMU) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Duration** | 180 sec |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Raw crashes** | \${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Unique** | \${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dedup rate** | \${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
