@@ -76,7 +76,13 @@ jobs:
         run: |
           cd blackbox-target
           mkdir -p flat_crashes
-          cp afl_out/default/crashes/id:* flat_crashes/ 2>/dev/null || true
+          # Копируем и переименовываем файлы (убираем двоеточия)
+          for f in afl_out/default/crashes/id:*; do
+            if [ -f "$f" ]; then
+              basename=$(basename "$f" | tr ':' '_')
+              cp "$f" "flat_crashes/$basename"
+            fi
+          done
           echo "🤖 Running AI Semantic Analysis..."
           python3 ../scripts/ollama-dedup.py flat_crashes
           echo ""
@@ -90,7 +96,9 @@ jobs:
           path: |
             blackbox-target/afl_out/
             blackbox-target/reports/
+            blackbox-target/flat_crashes/
           retention-days: 7
+          if-no-files-found: warn
 
       - name: Final Summary
         run: |
