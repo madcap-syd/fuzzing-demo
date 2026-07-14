@@ -49,14 +49,15 @@ jobs:
 
       - name: Analyze and Deduplicate
         id: analyze
-        shell: bash  # ВАЖНО: используем bash вместо sh
+        shell: bash
         run: |
           cd blackbox-target
-          mkdir -p unique_crashes reports
+          mkdir -p unique_crashes reports flat_crashes
           
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
           echo "Raw crashes: $RAW_COUNT"
           
+          # Копируем и переименовываем файлы (убираем двоеточия!)
           UNIQUE_COUNT=0
           declare -A seen_hashes
           
@@ -69,8 +70,14 @@ jobs:
               if [ -z "${seen_hashes[$key]}" ]; then
                 seen_hashes[$key]=1
                 UNIQUE_COUNT=$((UNIQUE_COUNT + 1))
+                
+                # Создаем безопасное имя (убираем : и другие спецсимволы)
                 safe_name="crash_$(printf '%06d' $UNIQUE_COUNT)_size_${size}.txt"
                 cp "$f" "unique_crashes/$safe_name"
+                
+                # Также копируем в flat_crashes с безопасным именем для артефактов
+                flat_name=$(basename "$f" | tr ':<>"|?*' '_______')
+                cp "$f" "flat_crashes/$flat_name"
               fi
             fi
           done
@@ -85,16 +92,18 @@ jobs:
           echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
           
           echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
+          ls -lh flat_crashes/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: fuzzing-results
           path: |
+            blackbox-target/flat_crashes/
             blackbox-target/unique_crashes/
             blackbox-target/reports/
-            blackbox-target/afl_out/
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Summary
         run: |
@@ -108,3 +117,6 @@ jobs:
           echo "| Raw crashes | \${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unique | \${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dedup rate | \${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "###  Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Download crash files from the Artifacts section above!" >> $GITHUB_STEP_SUMMARY
