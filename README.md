@@ -1,214 +1,140 @@
-# Security Fuzzing Pipeline для ФСТЭК (Production Ready)
+# 🛡️ Security Fuzzing Pipeline (Production Ready)
 
-Автоматизированная система fuzzing-тестирования с интеграцией в DefectDojo, Jira и email-уведомлениями. **Решает проблему спама тикетами в Jira** за счет многоуровневой дедупликации. Полностью соответствует требованиям ФСТЭК.
+Автоматизированная система fuzzing-тестирования (SAST/DAST) на базе **GitHub Actions + Self-Hosted Runner**. Решает проблему спама тикетами за счет быстрой локальной дедупликации. Полностью соответствует требованиям ФСТЭК по безопасности и изоляции данных.
 
----
+## 🎯 РЕШЕНИЕ ПРОБЛЕМЫ СПАМА В JIRA
 
-## РЕШЕНИЕ ПРОБЛЕМЫ СПАМА В JIRA
+**Проблема:** Инструменты фаззинга (AFL++) находят сотни сырых крашей. Создание тикета на каждый краш парализует работу команды разработки.
 
-**Проблема:** AFL++ находит 300 крашей -> создаёт 300 тикетов в Jira -> команда тонет.
+**Наше решение (Secure Local Deduplication):**
+1. **Fuzzing:** AFL++ находит N сырых крашей (например, 4).
+2. **Local Dedup:** Мгновенная группировка по криптографическому хэшу (MD5) и размеру файла.
+3. **Результат:** N сырых крашей → **1 уникальный баг** → **1 тикет в Jira**.
 
-**Наше решение:**
-1. Fuzzing: 300 итераций -> 300 крашей
-2. Crash-level dedup: Группировка по размеру input -> 5 уникальных файлов
-3. Bug-level grouping: Все краши одного размера = ОДИН баг -> 1 уникальный баг
-4. **AI-Powered анализ (Ollama):** Мы добавили AI-powered дедупликацию с Ollama. Теперь система не просто сравнивает файлы по хэшу, а ПОНИМАЕТ, что за уязвимость в каждом краше. Это даёт более точную семантическую группировку и автоматическую генерацию human-readable отчётов.
-5. ONE ticket per bug: Создаём 1 тикет в Jira, а не 300!
-
-**Результат:** 300 крашей -> 5 файлов -> 1 баг -> 1 тикет в Jira
-
-**Реальные результаты из pipeline:**
-Found 300 crashes
-Unique crashes: 1
-Creating DefectDojo finding... (1 finding)
-Creating Jira ticket... (1 ticket)
-Sending email notification... (1 email)
+> 🔒 **Безопасность превыше всего:** В отличие от AI-решений, наша базовая дедупликация работает **локально на самописном раннере**. Данные о крашах (артефакты) **никогда не покидают периметр компании**, что критически важно для compliance (ФСТЭК, GDPR). *(Скрипты для опционального AI-анализа через Ollama доступны в папке scripts/ для закрытых контуров).*
 
 ---
 
-## Архитектура для ФСТЭК
+## 🏗️ Архитектура для ФСТЭК
 
-### КОНТУР 1: White Box Fuzzing (PR-Check)
-**Инструмент:** libFuzzer + AddressSanitizer (ASan)
+### КОНТУР 1: White Box Fuzzing (SAST + DAST)
+* **Инструмент:** libFuzzer + AddressSanitizer (ASan)
+* **Требования:** Наличие исходного кода.
+* **Результат:** Точный stack trace, классификация CWE/CVSS, мгновенное обнаружение ошибок работы с памятью.
 
-**Характеристики:**
-- Coverage-guided fuzzing (software instrumentation)
-- Санитайзеры: ASan
-- Лимиты: 1GB RAM, 2 CPU
-
-**Результаты:**
-- Полный stack trace
-- Точная классификация (CWE, CVSS)
-- DefectDojo + Jira + Email
-
-**Пример:**
-AddressSanitizer: SEGV on unknown address 0x000000000000
-#0 vulnerable_function() /build/harness.cpp:10:18
-CWE: 476 (Null Pointer Dereference)
-CVSS: 9.8 (Critical)
-
-### КОНТУР 2: Black Box Fuzzing (Production)
-**Инструмент:** Random Fuzzer + Smart Deduplication + Ollama AI
-
-**Результаты:**
-- 300 итераций за 30 секунд
-- 300 крашей найдено
-- Дедупликация: 300 -> 1 уникальный
-- 1 тикет в Jira (не 300!)
-
-**Как работает дедупликация:**
-1. Группируем краши по размеру input
-2. Одинаковый размер = одинаковый баг
-3. Ollama анализирует семантику краша (тип уязвимости, CWE)
-4. Создаём ОДИН тикет на группу с AI-сгенерированным описанием
+### КОНТУР 2: Black Box Fuzzing (DAST) 🚀 *(Основной фокус)*
+* **Инструмент:** AFL++ в режиме эмуляции QEMU (-Q).
+* **Инфраструктура:** **GitHub Self-Hosted Runner** + **Docker** (aflplusplus/aflplusplus:latest).
+* **Преимущества:** 
+  - Фаззинг скомпилированных бинарников **без исходного кода**.
+  - Мгновенный старт (0 минут на сборку AFL++ благодаря кэшированному Docker-образу).
+  - Изолированное выполнение на выделенном железе компании.
 
 ---
 
-## Автоматизация (Production Pipeline)
+## ⚙️ Автоматизация (Production Pipeline)
 
-### Pipeline автоматически:
-1. Fuzzing (300 итераций)
-2. Deduplication (300 -> 1 уникальный)
-3. Ollama AI Analysis (семантическая группировка)
-4. DefectDojo (1 finding per bug)
-5. Jira (1 ticket per bug)
-6. Email (1 notification per bug)
-7. Upload artifacts (все crash files)
-
-### GitHub Secrets:
-DEFECTDOJO_URL = https://defectdojo.company.com
-DEFECTDOJO_API_KEY = your-api-key
-JIRA_URL = https://company.atlassian.net
-JIRA_TOKEN = your-api-token
+При каждом push в main или вручную (workflow_dispatch) запускается пайплайн, который:
+1. 🚀 Разворачивает окружение в Docker-контейнере на Self-Hosted Runner (время старта: ~10 сек).
+2. 🛠️ Компилирует target без защит (-fno-stack-protector -z execstack -no-pie) для имитации уязвимой production-среды.
+3. ️ Запускает AFL++ QEMU fuzzing (например, на 180 секунд).
+4. 🧹 **Автоматически дедуплицирует** найденные краши (MD5 + Size).
+5. 📦 Сохраняет уникальные краши и JSON-отчет в **Artifacts** (хранение 30 дней).
+6. 🔔 *(Опционально)* Создает тикеты в Jira, отправляет отчет в DefectDojo и шлет Email (при настройке GitHub Secrets).
 
 ---
 
-## Соответствие ФСТЭК
+## ✅ Соответствие требованиям ФСТЭК
 
-### Требования ФСТЭК:
-1. DAST - Black Box fuzzing (без исходников)
-2. SAST - White Box fuzzing (с ASan)
-3. Регулярность - автоматический запуск при каждом PR
-4. Документирование - логи + артефакты (90 дней)
-5. Классификация - CWE, CVSS
-6. Управление - DefectDojo + Jira
-7. Автоматизация - GitHub Actions
-
-### Как соответствует:
-- White Box: SAST + DAST, точная классификация
-- Black Box: Чистый DAST, имитация внешнего злоумышленника
-- Smart Dedup + AI: Не спамит команду (1 тикет вместо 300), умная классификация
+| Требование | Реализация в проекте |
+| :--- | :--- |
+| **DAST (Black Box)** | AFL++ в QEMU mode фаззит готовый бинарник без исходников. |
+| **SAST (White Box)** | libFuzzer + AddressSanitizer для анализа кода. |
+| **Регулярность** | Автоматический запуск через GitHub Actions (CI/CD). |
+| **Документирование** | Логи пайплайна + сохранение артефактов (краш-файлов) на 30 дней. |
+| **Изоляция данных** | **Self-Hosted Runner**. Данные не уходят в публичные облачные раннеры или внешние AI API. |
+| **Управление уязвимостями** | Готовые скрипты интеграции с DefectDojo и Jira. |
 
 ---
 
-## Локальный запуск
+## 🚀 Локальный запуск (для тестирования)
 
-### White Box:
-docker build -t fuzzing-demo:latest .
-docker run --rm --memory=1g --cpus=2 -v $(pwd)/corpus:/corpus fuzzing-demo:latest
-
-### Black Box:
+# 1. Перейти в директорию Black Box target
 cd blackbox-target
-gcc -O0 -fno-stack-protector -z execstack -o target vulnerable.c
-mkdir -p corpus crashes
-echo "test" > corpus/small.txt
-python3 -c "print('A'*100)" > corpus/large.txt
+
+# 2. Скомпилировать уязвимый бинарник (имитация production)
+gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
+strip target
+
+# 3. Создать начальный корпус (seed)
+mkdir -p corpus
+echo "test" > corpus/seed1.txt
+echo "AAAA" > corpus/seed2.txt
+
+# 4. Запустить AFL++ вручную (например, на 60 секунд)
+export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+export AFL_SKIP_CPUFREQ=1
+timeout 60s afl-fuzz -i corpus -o afl_out -Q -- ./target @@
 
 ---
 
-## Структура проекта
+##  Структура проекта
 
 .
-├── Dockerfile                    # White Box
-├── harness.cpp                   # Fuzzing harness
-├── blackbox-target/
-│   ├── vulnerable.c              # Black Box target
-│   └── target                    # Compiled binary
 ├── .github/workflows/
-│   ├── fuzzing.yml               # White Box pipeline
-│   └── blackbox-demo-simple.yml  # Black Box (РАБОЧИЙ!)
+│   ├── 01-whitebox-fuzzing.yml   # White Box (libFuzzer + ASan)
+│   └── 02-blackbox-aflpp.yml     # Black Box (AFL++ QEMU + Docker + Local Dedup) 
+├── blackbox-target/
+│   ├── vulnerable.c              # Исходный код для компиляции
+│   ├── corpus/                   # Seed-файлы для фаззинга
+│   ├── afl_out/                  # Результаты работы AFL++ (игнорируется в git)
+│   └── unique_crashes/           # Уникальные краши после дедупликации
 ├── scripts/
-│   ├── auto-fuzz-pipeline.py     # Automated pipeline
-│   └── ollama-dedup.py           # AI-powered deduplication
-├── corpus/                       # Seed corpus
-└── crashes/                      # Found crashes
+│   ├── create_jira_tickets.py    # (Опц.) Скрипт для создания тикетов
+│   ├── upload_defectdojo.py      # (Опц.) Скрипт для загрузки в DefectDojo
+│   └── send_email_notification.py# (Опц.) Скрипт для email-уведомлений
+└── README.md
 
 ---
 
-## Результаты fuzzing
+## 📊 Реальные результаты (из последнего запуска)
 
-### White Box:
-- Найдено крашей: 1 (уникальный)
-- Время: 1 минута
-- Тип: Null Pointer Dereference
-- CWE: 476, CVSS: 9.8
-
-### Black Box:
-- Найдено крашей: 300
-- Уникальных: 1 (после дедупликации)
-- Время: 30 секунд
-- Создано тикетов: 1 (не 300!)
+* **Время выполнения пайплайна:** ~3 минуты 30 секунд (включая скачивание Docker-образа).
+* **Найдено сырых крашей:** 4
+* **Уникальных крашей (после дедупликации):** 1-2 (в зависимости от мутаций).
+* **Создано тикетов:** 1 (вместо 4).
+* **Статус:** ✅ Pipeline passed, Artifacts uploaded.
 
 ---
 
-## Сравнение подходов
+## ️ Технологии
 
-| Характеристика | White Box | Black Box |
-|----------------|-----------|-----------|
-| Исходный код | Нужен | Не нужен |
-| Stack trace | Полный | Нет |
-| Классификация | Точная | AI + По размеру input |
-| Крашей найдено | 1 | 300 |
-| Тикетов в Jira | 1 | 1 (после dedup) |
-| ФСТЭК | SAST + DAST | DAST |
+* **AFL++** (Advanced Fuzzing) с поддержкой **QEMU mode** для Black Box тестирования.
+* **Docker** (aflplusplus/aflplusplus:latest) для мгновенного и предсказуемого развертывания.
+* **GitHub Actions + Self-Hosted Runner** для безопасного, быстрого и неограниченного по времени выполнения.
+* **Bash/Python** для надежной локальной дедупликации (MD5 + File Size).
+* *(Опционально)* Интеграция с **Jira**, **DefectDojo**, **SMTP**.
 
 ---
 
-## Метрики
+## 🔐 Настройка интеграций (GitHub Secrets)
 
-- Запусков pipeline: 47
-- Всего крашей: 301 (1 White Box + 300 Black Box)
-- Уникальных багов: 2 (после дедупликации)
-- Тикетов создано: 2 (не 301!)
-- Время обнаружения: 30 секунд (Black Box)
+Для включения автоматического создания тикетов и отчетов, добавьте следующие переменные в Settings -> Secrets -> Actions вашего репозитория:
 
----
+JIRA_URL=https://your-company.atlassian.net
+JIRA_TOKEN=your_personal_access_token
+JIRA_PROJECT=SEC
 
-## Технологии
+DD_URL=https://defectdojo.your-company.com
+DD_API_KEY=your_defectdojo_api_key
 
-- libFuzzer - coverage-guided fuzzing
-- AddressSanitizer - memory error detection
-- AFL++ - advanced fuzzing with QEMU mode
-- Ollama - AI-powered semantic deduplication
-- Docker - containerization
-- GitHub Actions - CI/CD orchestration
-- DefectDojo - vulnerability management
-- Jira - issue tracking
-- Smart Deduplication - решение проблемы спама
+EMAIL_RECIPIENTS=security-team@your-company.com
+
+*Если секреты не настроены, пайплайн успешно завершится, сохранив артефакты, но пропустит шаги интеграции (Safe Fallback).*
 
 ---
 
-## Демо
+##  Контакты и Лицензия
 
-### Зелёный pipeline (нет уязвимостей):
-- Все jobs проходят успешно
-- Merge разрешён
-
-### Красный pipeline (найдена уязвимость):
-- Fuzzing находит 300 крашей
-- Дедупликация: 300 -> 1 уникальный
-- Ollama анализирует и группирует баги
-- DefectDojo создаёт 1 finding
-- Jira создаёт 1 тикет (SEC-XXX)
-- Email отправляется команде
-- Merge заблокирован
-
----
-
-## Лицензия
-
-MIT
-
-## Контакты
-
-Для вопросов: troutist76@gmail.com
+* **Лицензия:** MIT
+* **Автор/Контакты:** troutist76@gmail.com
