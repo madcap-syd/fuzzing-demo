@@ -21,22 +21,33 @@ jobs:
 
       - name: Install AFL++ (if not present)
         run: |
-          if ! command -v afl-fuzz &> /dev/null; then
-            echo "Installing AFL++..."
-            sudo apt-get update
-            sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev meson ninja-build
-            cd /tmp
-            git clone https://github.com/AFLplusplus/AFLplusplus.git
-            cd AFLplusplus
-            make distrib -j$(nproc)
-            sudo make install
-            cd qemu_mode
-            ./build_qemu_support.sh
-            echo "AFL++ installed and cached!"
-          else
-            echo "AFL++ already installed (using cache)!"
+          # Проверяем, установлен ли afl-fuzz и его версия
+          if command -v afl-fuzz &> /dev/null; then
+            AFL_VERSION=$(afl-fuzz 2>&1 | head -1 | grep -oP '\d+\.\d+[cb]?' || echo "unknown")
+            echo "AFL++ version $AFL_VERSION already installed"
+            
+            # Если версия старая (меньше 4.0), переустанавливаем
+            if [[ "$AFL_VERSION" == "2.52b" ]] || [[ "$AFL_VERSION" == "unknown" ]]; then
+              echo "Old version detected, reinstalling..."
+            else
+              echo "Using existing AFL++ installation"
+              exit 0
+            fi
           fi
-          afl-fuzz --version
+          
+          echo "Installing AFL++..."
+          sudo apt-get update
+          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev meson ninja-build
+          cd /tmp
+          rm -rf AFLplusplus
+          git clone https://github.com/AFLplusplus/AFLplusplus.git
+          cd AFLplusplus
+          make distrib -j$(nproc)
+          sudo make install
+          cd qemu_mode
+          ./build_qemu_support.sh
+          echo "AFL++ installed successfully!"
+          afl-fuzz --version || afl-fuzz 2>&1 | head -1
 
       - name: Fix core_pattern
         run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
@@ -67,14 +78,17 @@ jobs:
         run: |
           cd blackbox-target
           mkdir -p unique_crashes reports
+          
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
           UNIQUE_COUNT=0
           declare -A seen_hashes
+          
           for f in afl_out/default/crashes/*; do
             if [ -f "$f" ]; then
               hash=$(md5sum "$f" | cut -d' ' -f1)
               size=$(stat -c%s "$f")
               key="${hash}_${size}"
+              
               if [ -z "${seen_hashes[$key]}" ]; then
                 seen_hashes[$key]=1
                 UNIQUE_COUNT=$((UNIQUE_COUNT + 1))
@@ -83,13 +97,16 @@ jobs:
               fi
             fi
           done
+          
           DUPLICATES=$((RAW_COUNT - UNIQUE_COUNT))
           DEDUP_RATE=0
           [ "$RAW_COUNT" -gt 0 ] && DEDUP_RATE=$((DUPLICATES * 100 / RAW_COUNT))
+          
           echo "raw_count=$RAW_COUNT" >> $GITHUB_OUTPUT
           echo "unique_count=$UNIQUE_COUNT" >> $GITHUB_OUTPUT
           echo "duplicates=$DUPLICATES" >> $GITHUB_OUTPUT
           echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
+          
           echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
 
       - name: Upload Artifacts
@@ -103,7 +120,7 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## 🎯 BlackBox Fuzzing Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "##  BlackBox Fuzzing Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
