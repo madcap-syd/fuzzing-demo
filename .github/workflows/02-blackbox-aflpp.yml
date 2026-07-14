@@ -1,4 +1,4 @@
-name: 02-BlackBox-Fuzzing (Self-Hosted + Docker)
+name: 02-BlackBox-Fuzzing (AFL++)
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
         run: |
           echo "=== Self-Hosted Runner with Docker ==="
           uname -a
-          afl-fuzz --version || afl-fuzz 2>&1 | head -1
+          afl-fuzz --version || echo "AFL++ ready"
 
       - name: Fix core_pattern
         run: |
@@ -45,11 +45,7 @@ jobs:
           cd blackbox-target
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           export AFL_SKIP_CPUFREQ=1
-          
-          echo "Starting AFL++ fuzzing..."
           timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
-          
-          echo "Fuzzing completed"
 
       - name: Analyze and Deduplicate
         id: analyze
@@ -58,8 +54,6 @@ jobs:
           mkdir -p unique_crashes reports
           
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
-          echo "Raw crashes: $RAW_COUNT"
-          
           UNIQUE_COUNT=0
           declare -A seen_hashes
           
@@ -88,17 +82,6 @@ jobs:
           echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
           
           echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
-          
-          cat > reports/fuzzing_report.json <<JSONEOF
-{
-  "tool": "AFL++ (Docker)",
-  "duration": 180,
-  "raw_crashes": $RAW_COUNT,
-  "unique_crashes": $UNIQUE_COUNT,
-  "duplicates": $DUPLICATES,
-  "dedup_rate": $DEDUP_RATE
-}
-JSONEOF
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -112,18 +95,13 @@ JSONEOF
 
       - name: Summary
         run: |
-          echo "##  BlackBox Fuzzing Results (Docker + Self-Hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "##  BlackBox Fuzzing Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner** | Self-Hosted + Docker |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Tool** | AFL++ (Official Image) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Duration** | 180 sec |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Raw crashes** | \${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Unique** | \${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Dedup rate** | \${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "###  Advantages" >> $GITHUB_STEP_SUMMARY
-          echo "- No build time (pre-built Docker image)" >> $GITHUB_STEP_SUMMARY
-          echo "- Consistent environment" >> $GITHUB_STEP_SUMMARY
-          echo "- Fast execution (~2-3 min total)" >> $GITHUB_STEP_SUMMARY
+          echo "| Runner | Self-Hosted + Docker |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | AFL++ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | 180 sec |" >> $GITHUB_STEP_SUMMARY
+          echo "| Raw crashes | \${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unique | \${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dedup rate | \${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
