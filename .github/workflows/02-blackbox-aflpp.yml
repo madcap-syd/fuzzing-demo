@@ -1,4 +1,4 @@
-name: 02-BlackBox-Fuzzing (Self-Hosted)
+name: 02-BlackBox-Fuzzing (Self-Hosted + Docker)
 
 on:
   push:
@@ -8,55 +8,27 @@ on:
 jobs:
   blackbox:
     runs-on: self-hosted
+    container: aflplusplus/aflplusplus:latest
+    
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Runner Environment
+      - name: Check Environment
         run: |
-          echo "=== Running on Self-Hosted Runner ==="
+          echo "=== Self-Hosted Runner with Docker ==="
           uname -a
-          free -h
-          nproc
-          docker --version
-
-      - name: Install AFL++ (if not present)
-        run: |
-          # Проверяем, установлен ли afl-fuzz и его версия
-          if command -v afl-fuzz &> /dev/null; then
-            AFL_VERSION=$(afl-fuzz 2>&1 | head -1 | grep -oP '\d+\.\d+[cb]?' || echo "unknown")
-            echo "AFL++ version $AFL_VERSION already installed"
-            
-            # Если версия старая (меньше 4.0), переустанавливаем
-            if [[ "$AFL_VERSION" == "2.52b" ]] || [[ "$AFL_VERSION" == "unknown" ]]; then
-              echo "Old version detected, reinstalling..."
-            else
-              echo "Using existing AFL++ installation"
-              exit 0
-            fi
-          fi
-          
-          echo "Installing AFL++..."
-          sudo apt-get update
-          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev meson ninja-build
-          cd /tmp
-          rm -rf AFLplusplus
-          git clone https://github.com/AFLplusplus/AFLplusplus.git
-          cd AFLplusplus
-          make distrib -j$(nproc)
-          sudo make install
-          cd qemu_mode
-          ./build_qemu_support.sh
-          echo "AFL++ installed successfully!"
           afl-fuzz --version || afl-fuzz 2>&1 | head -1
 
       - name: Fix core_pattern
-        run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
+        run: |
+          echo "core" > /proc/sys/kernel/core_pattern 2>/dev/null || true
 
       - name: Build Target
         run: |
           cd blackbox-target
           gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
           strip target
+          echo "Target built successfully"
 
       - name: Create Corpus
         run: |
@@ -64,6 +36,8 @@ jobs:
           mkdir -p corpus
           echo "test" > corpus/seed1.txt
           echo "AAAA" > corpus/seed2.txt
+          python3 -c "print('B'*10)" > corpus/seed3.txt
+          echo "Corpus created"
 
       - name: Run AFL++ (180 sec)
         run: |
@@ -71,7 +45,11 @@ jobs:
           cd blackbox-target
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           export AFL_SKIP_CPUFREQ=1
+          
+          echo "Starting AFL++ fuzzing..."
           timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          
+          echo "Fuzzing completed"
 
       - name: Analyze and Deduplicate
         id: analyze
@@ -80,6 +58,8 @@ jobs:
           mkdir -p unique_crashes reports
           
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+          echo "Raw crashes: $RAW_COUNT"
+          
           UNIQUE_COUNT=0
           declare -A seen_hashes
           
@@ -108,6 +88,17 @@ jobs:
           echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
           
           echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
+          
+          cat > reports/fuzzing_report.json <<JSONEOF
+{
+  "tool": "AFL++ (Docker)",
+  "duration": 180,
+  "raw_crashes": $RAW_COUNT,
+  "unique_crashes": $UNIQUE_COUNT,
+  "duplicates": $DUPLICATES,
+  "dedup_rate": $DEDUP_RATE
+}
+JSONEOF
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -116,17 +107,23 @@ jobs:
           path: |
             blackbox-target/unique_crashes/
             blackbox-target/reports/
+            blackbox-target/afl_out/
           retention-days: 30
 
       - name: Summary
         run: |
-          echo "##  BlackBox Fuzzing Results (Self-Hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "##  BlackBox Fuzzing Results (Docker + Self-Hosted)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner** | Self-Hosted (Local Ubuntu) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Tool** | AFL++ (QEMU) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner** | Self-Hosted + Docker |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tool** | AFL++ (Official Image) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Duration** | 180 sec |" >> $GITHUB_STEP_SUMMARY
           echo "| **Raw crashes** | \${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Unique** | \${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Dedup rate** | \${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "###  Advantages" >> $GITHUB_STEP_SUMMARY
+          echo "- No build time (pre-built Docker image)" >> $GITHUB_STEP_SUMMARY
+          echo "- Consistent environment" >> $GITHUB_STEP_SUMMARY
+          echo "- Fast execution (~2-3 min total)" >> $GITHUB_STEP_SUMMARY
