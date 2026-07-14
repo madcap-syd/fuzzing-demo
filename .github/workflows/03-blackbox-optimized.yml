@@ -15,8 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fix core_pattern
-        run: |
-          echo "core" > /proc/sys/kernel/core_pattern 2>/dev/null || true
+        run: echo "core" > /proc/sys/kernel/core_pattern 2>/dev/null || true
 
       - name: Build Target
         run: |
