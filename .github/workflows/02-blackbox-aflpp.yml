@@ -1,15 +1,8 @@
-name: 02-BlackBox-Fuzzing (AFL++)
+name: 02-BlackBox-Fuzzing
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-
-env:
-  JIRA_URL: ${{ secrets.JIRA_URL }}
-  JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-  DD_URL: ${{ secrets.DD_URL }}
-  DD_API_KEY: ${{ secrets.DD_API_KEY }}
 
 jobs:
   blackbox:
@@ -20,7 +13,9 @@ jobs:
       - name: Install AFL++
         run: |
           sudo apt-get update
-          sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget pkg-config libglib2.0-dev libpixman-1-dev libtool libtool-bin autoconf automake meson ninja-build
+          sudo apt-get install -y git make gcc clang llvm python3 wget
+          sudo apt-get install -y pkg-config libglib2.0-dev libpixman-1-dev
+          sudo apt-get install -y meson ninja-build
           cd /tmp
           git clone https://github.com/AFLplusplus/AFLplusplus.git
           cd AFLplusplus
@@ -28,7 +23,6 @@ jobs:
           sudo make install
           cd qemu_mode
           ./build_qemu_support.sh
-          afl-fuzz --version
 
       - name: Fix core_pattern
         run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
@@ -37,14 +31,12 @@ jobs:
         run: |
           cd blackbox-target
           gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
-          strip target
 
       - name: Create Corpus
         run: |
           cd blackbox-target
           mkdir -p corpus
-          echo "test" > corpus/seed1.txt
-          python3 -c "print('B'*10)" > corpus/seed2.txt
+          echo "test" > corpus/seed.txt
 
       - name: Run AFL++
         run: |
@@ -54,95 +46,15 @@ jobs:
           export AFL_SKIP_CPUFREQ=1
           timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
 
-      - name: Analyze Crashes
-        id: analyze
+      - name: Count Crashes
+        id: count
         run: |
           cd blackbox-target
-          mkdir -p unique_crashes reports
-          
-          RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
-          UNIQUE_COUNT=0
-          
-          declare -A seen_hashes
-          for f in afl_out/default/crashes/*; do
-            if [ -f "$f" ]; then
-              hash=$(md5sum "$f" | cut -d' ' -f1)
-              size=$(stat -c%s "$f")
-              key="${hash}_${size}"
-              if [ -z "${seen_hashes[$key]}" ]; then
-                seen_hashes[$key]=1
-                UNIQUE_COUNT=$((UNIQUE_COUNT + 1))
-                safe_name="crash_$(printf '%06d' $UNIQUE_COUNT)_size_${size}.txt"
-                cp "$f" "unique_crashes/$safe_name"
-              fi
-            fi
-          done
-          
-          DUPLICATES=$((RAW_COUNT - UNIQUE_COUNT))
-          DEDUP_RATE=0
-          [ "$RAW_COUNT" -gt 0 ] && DEDUP_RATE=$((DUPLICATES * 100 / RAW_COUNT))
-          
-          echo "raw_count=$RAW_COUNT" >> $GITHUB_OUTPUT
-          echo "unique_count=$UNIQUE_COUNT" >> $GITHUB_OUTPUT
-          echo "duplicates=$DUPLICATES" >> $GITHUB_OUTPUT
-          echo "dedup_rate=$DEDUP_RATE" >> $GITHUB_OUTPUT
-          
-          echo "Raw: $RAW_COUNT, Unique: $UNIQUE_COUNT, Dedup: ${DEDUP_RATE}%"
-          
-          cat > reports/fuzzing_report.json <<JSONEOF
-{
-  "tool": "AFL++",
-  "raw_crashes": $RAW_COUNT,
-  "unique_crashes": $UNIQUE_COUNT,
-  "duplicates": $DUPLICATES
-}
-JSONEOF
-
-      - name: Create Jira Tickets
-        if: steps.analyze.outputs.unique_count > 0 && env.JIRA_URL != ''
-        run: |
-          echo "Creating Jira tickets..."
-          for i in $(seq 1 ${{ steps.analyze.outputs.unique_count }}); do
-            echo "  Ticket #$i: Buffer Overflow (size: $(stat -c%s unique_crashes/crash_$(printf '%06d' $i)_size_*.txt 2>/dev/null | head -1) bytes)"
-          done
-          echo "Jira integration ready"
-
-      - name: Upload to DefectDojo
-        if: steps.analyze.outputs.unique_count > 0 && env.DD_URL != ''
-        run: |
-          echo "Uploading to DefectDojo..."
-          echo "Product ID: $DD_URL"
-          echo "DefectDojo integration ready"
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzzing-results
-          path: |
-            blackbox-target/unique_crashes/
-            blackbox-target/reports/
-          retention-days: 30
+          COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+          echo "crash_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Found $COUNT crashes"
 
       - name: Summary
         run: |
-          echo "## BlackBox Fuzzing Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Tool | AFL++ (QEMU) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Duration | 180 sec |" >> $GITHUB_STEP_SUMMARY
-          echo "| Raw crashes | ${{ steps.analyze.outputs.raw_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Unique | ${{ steps.analyze.outputs.unique_count }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dedup rate | ${{ steps.analyze.outputs.dedup_rate }}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Integrations" >> $GITHUB_STEP_SUMMARY
-          if [ -n "$JIRA_URL" ]; then
-            echo "- Jira: Enabled" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- Jira: Not configured" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ -n "$DD_URL" ]; then
-            echo "- DefectDojo: Enabled" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- DefectDojo: Not configured" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "## AFL++ Results" >> $GITHUB_STEP_SUMMARY
+          echo "Crashes: ${{ steps.count.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
