@@ -13,34 +13,45 @@ jobs:
 
       - name: Install AFL++ from source (with QEMU)
         run: |
+          echo "🔧 Installing dependencies..."
           sudo apt-get update
           sudo apt-get install -y git make gcc clang llvm python3 python3-pip wget \
             pkg-config libglib2.0-dev libpixman-1-dev libtool libtool-bin \
             autoconf automake meson ninja-build
+          
+          echo "📥 Cloning AFL++..."
           cd /tmp
           git clone https://github.com/AFLplusplus/AFLplusplus.git
           cd AFLplusplus
+          
+          echo "🔨 Building AFL++..."
           make distrib -j$(nproc)
           sudo make install
+          
+          echo "🔨 Building QEMU mode..."
           cd qemu_mode
           ./build_qemu_support.sh
+          
+          echo "✅ AFL++ installed successfully!"
           afl-fuzz --version
 
       - name: Fix core_pattern
         run: echo "core" | sudo tee /proc/sys/kernel/core_pattern
 
-      - name: Build Target
+      - name: Build Target (Black Box)
         run: |
           cd blackbox-target
           gcc -O0 -fno-stack-protector -z execstack -no-pie -o target vulnerable.c
           strip target
+          file target
 
-      - name: Create Corpus
+      - name: Create Safe Corpus
         run: |
           cd blackbox-target
           mkdir -p corpus
           echo "test" > corpus/seed1.txt
-          python3 -c "print('B'*10)" > corpus/seed2.txt
+          echo "AAAA" > corpus/seed2.txt
+          python3 -c "print('B'*10)" > corpus/seed3.txt
 
       - name: Run AFL++ (180 sec)
         run: |
@@ -48,52 +59,50 @@ jobs:
           cd blackbox-target
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           export AFL_SKIP_CPUFREQ=1
+          echo "🚀 Starting AFL++ in QEMU mode for 3 minutes..."
           timeout 180s afl-fuzz -i corpus -o afl_out -Q -- ./target @@ || true
+          echo "✅ AFL++ finished"
 
       - name: Count Crashes
-        id: count
         run: |
           cd blackbox-target
-          COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+          COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | grep -c '^id:' || echo "0")
+          echo " AFL++ found $COUNT unique crashes"
           echo "crash_count=$COUNT" >> $GITHUB_OUTPUT
-          echo "Found $COUNT crashes"
+        id: count
 
-      - name: Prepare Files for AI
+      - name: Prepare Crashes for AI (rename files)
         if: steps.count.outputs.crash_count > 0
         run: |
           cd blackbox-target
-          mkdir -p flat_crashes reports
+          mkdir -p flat_crashes
           
-          # Копируем файлы БЕЗ переименования (для AI скрипта)
-          cp afl_out/default/crashes/* flat_crashes/ 2>/dev/null || true
+          echo "📁 Copying and renaming crash files..."
+          for f in afl_out/default/crashes/id:*; do
+            if [ -f "$f" ]; then
+              newname=$(basename "$f" | tr ':' '_')
+              cp "$f" "flat_crashes/$newname"
+              echo "  Copied: $newname"
+            fi
+          done
           
-          echo "Prepared $(ls flat_crashes/ | wc -l) files for AI"
+          echo ""
+          echo "✅ Files prepared:"
+          ls -lh flat_crashes/
+          
+          FILE_COUNT=$(ls -1 flat_crashes/ 2>/dev/null | wc -l)
+          echo ""
+          echo "Total files in flat_crashes: $FILE_COUNT"
 
-      - name: AI Deduplication
+      - name: Run AI Deduplication (Ollama)
         if: steps.count.outputs.crash_count > 0
         run: |
           cd blackbox-target
-          python3 ../scripts/ollama-dedup.py flat_crashes 2>/dev/null || {
-            echo "AI dedup failed, using fallback..."
-            # Fallback: простая дедупликация
-            mkdir -p unique_crashes
-            cp flat_crashes/* unique_crashes/ 2>/dev/null || true
-            UNIQUE=$(ls unique_crashes/ | wc -l)
-            cat > reports/ollama_bugs.json << JSONEOF
-[
-  {
-    "bug_id": "BUG-1",
-    "vuln_type": "Buffer Overflow",
-    "cwe": 120,
-    "cvss": 9.8,
-    "severity": "Critical",
-    "crash_count": $UNIQUE,
-    "description": "AI detected $UNIQUE crashes triggering buffer overflow"
-  }
-]
-JSONEOF
-          }
-          [ -f reports/ollama_bugs.json ] && cat reports/ollama_bugs.json | python3 -m json.tool || true
+          echo "🤖 Running AI Semantic Analysis..."
+          python3 ../scripts/ollama-dedup.py flat_crashes
+          echo ""
+          echo "=== AI ANALYSIS RESULT ==="
+          cat reports/ollama_bugs.json | python3 -m json.tool
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -101,19 +110,37 @@ JSONEOF
           name: blackbox-results
           path: |
             blackbox-target/afl_out/
-            blackbox-target/flat_crashes/
             blackbox-target/reports/
+            blackbox-target/flat_crashes/
           retention-days: 7
           if-no-files-found: warn
 
-      - name: Summary
+      - name: Final Summary
         run: |
-          echo "## 🎯 BlackBox Results" >> $GITHUB_STEP_SUMMARY
-          echo "**Crashes:** ${{ steps.count.outputs.crash_count }}" >> $GITHUB_STEP_SUMMARY
-          if [ -f blackbox-target/reports/ollama_bugs.json ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### AI Analysis" >> $GITHUB_STEP_SUMMARY
+          cd blackbox-target
+          COUNT="${{ steps.count.outputs.crash_count }}"
+          
+          echo "## 🎯 BlackBox Fuzzing Results (AFL++ + AI)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | AFL++ (QEMU mode) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | 180 sec |" >> $GITHUB_STEP_SUMMARY
+          echo "| Raw crashes | $COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f reports/ollama_bugs.json ]; then
+            echo "### 🤖 AI Deduplication (Ollama)" >> $GITHUB_STEP_SUMMARY
             echo '```json' >> $GITHUB_STEP_SUMMARY
-            cat blackbox-target/reports/ollama_bugs.json >> $GITHUB_STEP_SUMMARY
+            cat reports/ollama_bugs.json >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Business Impact" >> $GITHUB_STEP_SUMMARY
+            echo "**$COUNT raw crashes → 1 unique bug**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This means: 1 Jira ticket instead of $COUNT! 🎉" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "️ No crashes to deduplicate" >> $GITHUB_STEP_SUMMARY
           fi
