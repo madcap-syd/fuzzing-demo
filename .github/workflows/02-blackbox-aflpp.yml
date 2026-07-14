@@ -49,11 +49,14 @@ jobs:
 
       - name: Analyze and Deduplicate
         id: analyze
+        shell: bash  # ВАЖНО: используем bash вместо sh
         run: |
           cd blackbox-target
           mkdir -p unique_crashes reports
           
           RAW_COUNT=$(ls -1 afl_out/default/crashes 2>/dev/null | wc -l)
+          echo "Raw crashes: $RAW_COUNT"
+          
           UNIQUE_COUNT=0
           declare -A seen_hashes
           
